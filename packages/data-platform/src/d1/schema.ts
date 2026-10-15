@@ -104,7 +104,13 @@ export const productMaster = sqliteTable(
   'product_master',
   {
     id: integer('id').primaryKey(),
-    /** Display name from merchant feed (RawFeedRecord.productName). */
+    /**
+     * Listing display name. Historically the verbatim feed value
+     * (RawFeedRecord.productName); since change product-name-quality-gate
+     * (task 2.3) ingestion stores the annotation-stripped display form and
+     * the parenthetical commentary lands in `name_annotation`. The verbatim
+     * feed string has NO separate column — see nameAnnotation's docblock.
+     */
     name: text('name', { length: 512 }).notNull(),
     /** Manufacturer from feed adapter — used for product disambiguation. */
     manufacturer: text('manufacturer', { length: 256 }).notNull(),

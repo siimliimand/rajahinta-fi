@@ -8,8 +8,14 @@
  * strategy is preserved exactly:
  *
  * - Product upsert: EAN match first (full mutable-field refresh), then
- *   the (name, brand, containerType, unitVolume) compound key (only
- *   stamps updatedAt + fills a missing EAN), then insert.
+ *   the (name, brand, containerType, unitVolume) compound key (stamps
+ *   updatedAt + the name-quality verdict/ annotation, fills a missing
+ *   EAN), then insert. The name-quality gate (change
+ *   product-name-quality-gate, task 2.3) is applied at this persistence
+ *   path exactly as in the Drizzle adapter it ports: `name` stores the
+ *   annotation-stripped display form, `name_annotation` the commentary,
+ *   `name_quality` the gate verdict — quarantined rows are still
+ *   WRITTEN (quarantine excludes from listings, it is not deletion).
  * - Offer upsert: append-only insert; `changed` reports first sighting
  *   or price move versus the latest prior (merchant, product) row,
  *   ordered (observedAt, id) descending — the guardrail the per-change
@@ -29,6 +35,10 @@ import type {
   UpsertResult,
   UpsertOfferResult,
 } from '../../../../packages/data-acquisition/src/interfaces/upsert-port.interface';
+import {
+  classifyNameQuality,
+  stripNameAnnotation,
+} from '../../../../packages/data-acquisition/src/services/name-quality';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
 
 /** pg numeric-string → REAL number (D1 binds numbers, not numeric text). */
@@ -77,6 +87,7 @@ const UPDATE_BY_EAN_SQL = `
     name = ?, manufacturer = ?, brand = ?, category = ?, alcohol_by_volume = ?,
     unit_volume = ?, container_type = ?, regulatory_classification = ?,
     deposit_system_status = ?, weight_grams = ?, review_hold_reason = ?,
+    name_quality = ?, name_annotation = ?,
     updated_at = ?
   WHERE id = ?`;
 
@@ -87,15 +98,16 @@ const FIND_BY_COMPOUND_SQL = `
 
 const UPDATE_COMPOUND_SQL = `
   UPDATE product_master
-     SET updated_at = ?, ean = COALESCE(?, ean)
+     SET updated_at = ?, ean = COALESCE(?, ean),
+         name_quality = ?, name_annotation = ?
    WHERE id = ?`;
 
 const INSERT_PRODUCT_SQL = `
   INSERT INTO product_master (
     name, manufacturer, brand, category, alcohol_by_volume, unit_volume,
     container_type, regulatory_classification, deposit_system_status,
-    weight_grams, review_hold_reason, ean
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    weight_grams, review_hold_reason, name_quality, name_annotation, ean
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   RETURNING id`;
 
 const LATEST_OFFER_PRICE_SQL = `
@@ -122,6 +134,12 @@ export class D1UpsertRepository implements IUpsertRepository {
     const depositSystemStatus = toInt(input.depositSystemStatus);
     const weightGrams = weightGramsOf(input);
     const reviewHoldReason = reviewHoldReasonOf(input);
+    // Name-quality gate (task 2.3) — same transform as the Drizzle
+    // adapter: stripped display form into `name`, commentary into
+    // `name_annotation`, gate verdict (classified on the RAW feed name,
+    // byte-identical to the task 1.1 backfill) into `name_quality`.
+    const { displayName, annotation } = stripNameAnnotation(input.name);
+    const nameQuality = classifyNameQuality(input.name);
 
     // ---- Tier 1: Match by EAN — refresh every mutable field --------------
     if (input.ean) {
@@ -132,7 +150,7 @@ export class D1UpsertRepository implements IUpsertRepository {
         await this.d1
           .prepare(UPDATE_BY_EAN_SQL)
           .bind(
-            input.name,
+            displayName,
             input.manufacturer,
             input.brand,
             input.category,
@@ -143,6 +161,8 @@ export class D1UpsertRepository implements IUpsertRepository {
             depositSystemStatus,
             weightGrams,
             reviewHoldReason,
+            nameQuality,
+            annotation,
             updatedAt,
             byEan.id,
           )
@@ -152,14 +172,18 @@ export class D1UpsertRepository implements IUpsertRepository {
     }
 
     // ---- Tier 2: Compound key — stamp updatedAt, fill a missing EAN ------
+    // Match on the stripped display form (the value `name` stores from
+    // now on) so annotation-wording drift cannot fork a duplicate row;
+    // the verdict/ annotation re-stamp mirrors the Drizzle adapter — a
+    // compound hit must never leave a quarantined row reading 'ok'.
     const byCompound = await this.d1
       .prepare(FIND_BY_COMPOUND_SQL)
-      .bind(input.name, input.brand, input.containerType, unitVolume)
+      .bind(displayName, input.brand, input.containerType, unitVolume)
       .first<{ id: number }>();
     if (byCompound !== null) {
       await this.d1
         .prepare(UPDATE_COMPOUND_SQL)
-        .bind(updatedAt, input.ean ?? null, byCompound.id)
+        .bind(updatedAt, input.ean ?? null, nameQuality, annotation, byCompound.id)
         .run();
       return { productId: byCompound.id, created: false };
     }
@@ -168,7 +192,7 @@ export class D1UpsertRepository implements IUpsertRepository {
     const row = await this.d1
       .prepare(INSERT_PRODUCT_SQL)
       .bind(
-        input.name,
+        displayName,
         input.manufacturer,
         input.brand,
         input.category,
@@ -179,6 +203,8 @@ export class D1UpsertRepository implements IUpsertRepository {
         depositSystemStatus,
         weightGrams,
         reviewHoldReason,
+        nameQuality,
+        annotation,
         input.ean ?? null,
       )
       .first<{ id: number }>();

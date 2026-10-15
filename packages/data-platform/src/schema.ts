@@ -35,7 +35,10 @@ import {
  */
 export const productMaster = pgTable('product_master', {
   id: serial('id').primaryKey(),
-  /** Display name from merchant feed (RawFeedRecord.productName). */
+  /**
+   * Listing display name — the annotation-stripped form since change
+   * product-name-quality-gate (task 2.3); no longer the verbatim feed value.
+   */
   name: varchar('name', { length: 512 }).notNull(),
   /** Manufacturer from feed adapter — used for product disambiguation. */
   manufacturer: varchar('manufacturer', { length: 256 }).notNull(),
@@ -69,6 +72,21 @@ export const productMaster = pgTable('product_master', {
    * 'nonalcoholic_in_alcohol_category' token today).
    */
   reviewHoldReason: text('review_hold_reason'),
+  /**
+   * Name-informativeness gate status — mirrors the D1 column 1:1
+   * (migration 0037, change product-name-quality-gate): 'ok' or
+   * 'quarantined'. Ingestion stamps the gate's verdict at the upsert;
+   * DEFAULT 'ok' is the existing-data contract until the backfill
+   * reclassifies. Quarantined rows are excluded from listings, not
+   * deleted.
+   */
+  nameQuality: varchar('name_quality', { length: 32 }).notNull().default('ok'),
+  /**
+   * Merchant annotation stripped from the display name — mirrors the D1
+   * column 1:1 (migration 0037, change product-name-quality-gate).
+   * NULL = the feed name carried no parenthetical commentary.
+   */
+  nameAnnotation: text('name_annotation'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

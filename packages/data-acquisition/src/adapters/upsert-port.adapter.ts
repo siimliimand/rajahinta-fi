@@ -22,6 +22,16 @@
  * prior row for the same (merchant, product) — first sighting or price move —
  * which drives the one-observation-per-changed-offer guardrail.
  *
+ * **Name-quality gate** (change product-name-quality-gate, task 2.3): every
+ * product upsert classifies the mapped feed name and stores the stripped
+ * display form — `name` carries the annotation-stripped display name,
+ * `name_annotation` the parenthetical commentary, `name_quality` the gate
+ * verdict.  Quarantined rows are still WRITTEN here: quarantine excludes
+ * them from listings (the shared listing predicate, task 2.4), it is not
+ * deletion.  The compound-key tier matches on the stripped display form —
+ * the value the column now stores — and re-stamps the verdict so a
+ * compound hit can never leave a quarantined row reading 'ok'.
+ *
  * @module DrizzleUpsertRepository
  */
 
@@ -33,6 +43,10 @@ import {
   productMaster,
   retailOffers,
 } from '@rajahinta/data-platform';
+import {
+  classifyNameQuality,
+  stripNameAnnotation,
+} from '../services/name-quality';
 import type {
   IUpsertRepository,
   UpsertProductInput,
@@ -72,6 +86,15 @@ export class DrizzleUpsertRepository implements IUpsertRepository {
   // --------------------------------------------------------------------------
 
   async upsertProduct(input: UpsertProductInput): Promise<UpsertResult> {
+    // Name-quality gate (change product-name-quality-gate, task 2.3) —
+    // applied here at the persistence path so EVERY upsert caller gets it,
+    // the same choke-point pattern as the weightGrams/reviewHoldReason
+    // widenings. The listing-visible `name` is the annotation-stripped
+    // display form; classification runs on the raw feed name, byte-identical
+    // to the task 1.1 backfill's verdicts.
+    const { displayName, annotation } = stripNameAnnotation(input.name);
+    const nameQuality = classifyNameQuality(input.name);
+
     // ---- Tier 1: Match by EAN -----------------------------------------------
     if (input.ean) {
       const existing = await this.db
@@ -84,7 +107,7 @@ export class DrizzleUpsertRepository implements IUpsertRepository {
         await this.db
           .update(productMaster)
           .set({
-            name: input.name,
+            name: displayName,
             manufacturer: input.manufacturer,
             brand: input.brand,
             category: input.category,
@@ -95,6 +118,8 @@ export class DrizzleUpsertRepository implements IUpsertRepository {
             depositSystemStatus: input.depositSystemStatus,
             weightGrams: weightGramsOf(input),
             reviewHoldReason: reviewHoldReasonOf(input),
+            nameQuality,
+            nameAnnotation: annotation,
             updatedAt: new Date(),
           })
           .where(eq(productMaster.id, existing[0].id));
@@ -104,12 +129,15 @@ export class DrizzleUpsertRepository implements IUpsertRepository {
     }
 
     // ---- Tier 2: Match by compound key (name, brand, containerType, unitVolume)
+    // The match key is the stripped display form — the value `name` stores
+    // from now on — so annotation-wording drift ("saatavuus 1 plo" →
+    // "saatavuus 2 plo") cannot fork a second row for the same product.
     const existingCompound = await this.db
       .select({ id: productMaster.id })
       .from(productMaster)
       .where(
         and(
-          eq(productMaster.name, input.name),
+          eq(productMaster.name, displayName),
           eq(productMaster.brand, input.brand),
           eq(productMaster.containerType, input.containerType),
           eq(productMaster.unitVolume, input.unitVolume),
@@ -120,7 +148,16 @@ export class DrizzleUpsertRepository implements IUpsertRepository {
     if (existingCompound.length > 0) {
       const updateData: Partial<typeof productMaster.$inferInsert> & {
         updatedAt: Date;
-      } = { updatedAt: new Date() };
+      } = {
+        updatedAt: new Date(),
+        // The verdict is re-stamped on every hit: the matched row's name
+        // equals the string just classified, so a quarantined verdict must
+        // land here too or the row would keep reading 'ok' and leak into
+        // the listings the gate excludes it from. Same for the annotation —
+        // the stored name has none, the incoming feed name may.
+        nameQuality,
+        nameAnnotation: annotation,
+      };
 
       // Populate EAN if the input carries one and the existing row lacks it
       if (input.ean) {
@@ -139,7 +176,7 @@ export class DrizzleUpsertRepository implements IUpsertRepository {
     const [row] = await this.db
       .insert(productMaster)
       .values({
-        name: input.name,
+        name: displayName,
         manufacturer: input.manufacturer,
         brand: input.brand,
         category: input.category,
@@ -150,6 +187,8 @@ export class DrizzleUpsertRepository implements IUpsertRepository {
         depositSystemStatus: input.depositSystemStatus,
         weightGrams: weightGramsOf(input),
         reviewHoldReason: reviewHoldReasonOf(input),
+        nameQuality,
+        nameAnnotation: annotation,
         ean: input.ean,
       })
       .returning({ id: productMaster.id });
