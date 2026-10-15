@@ -504,6 +504,20 @@ export default async function HomePage({
           <p className="mx-auto mt-4 max-w-3xl text-center text-xs leading-relaxed text-gray-500">
             {t('exampleNote')}
           </p>
+
+          {/* ── Path from the example to a real calculation
+              (audit-copy-batch task 3.2): the same structure, the
+              visitor's own inputs. The i18n Link resolves the locale's
+              calculator path (/laskuri in Finnish). ── */}
+          <div className="mt-6 text-center">
+            <Link
+              href="/calculator"
+              data-testid="home-example-calc-link"
+              className="inline-flex items-center rounded-md border border-primary-600 bg-white px-4 py-2 text-sm font-medium text-primary-700 transition-colors hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+            >
+              {t('exampleCalcLink')}
+            </Link>
+          </div>
         </div>
       </section>
 

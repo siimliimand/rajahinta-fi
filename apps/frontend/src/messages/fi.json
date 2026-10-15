@@ -152,6 +152,7 @@
     "exampleDifferenceLabel": "Ero Suomen vertailuhintaan",
     "exampleDifferenceValue": "Esimerkissä tuonti on noin 33,00 € edullisempi",
     "exampleNote": "Esimerkkilaskelma käyttää kiinteitä kuvitteellisia lukuja eikä hae tietoja. Vain kokonaishintoja verrataan: ero voi kääntyä myös toisin, jolloin tuonti on vertailuhintaa kalliimpi. Veron määrä vaihtelee juomatyypin ja vahvuuden mukaan.",
+    "exampleCalcLink": "Tee sama laskelma omilla tuotteillasi",
     "taskCardsHeading": "Valitse tilanteesi",
     "taskCardsShoppingTitle": "Mitä kannattaa ostaa?",
     "taskCardsShoppingBody": "Päivittäin päivitetty luettelo arvioiduista kokonaishinnoista ja niiden erosta Alkon viitehintaan kategorioittain.",
@@ -579,6 +580,11 @@
       "EXPIRED": "Vanhentunut"
     },
     "computed": "Laskettu {date}"
+  },
+  "AuthorityLinks": {
+    "heading": "Viranomaislähteet",
+    "alcoholExcise": "Alkoholivalmistevero (vero.fi)",
+    "exciseDuties": "Valmisteverot (vero.fi)"
   },
   "BasketCommon": {
     "addProducts": "Lisää tuotteita",
@@ -1253,6 +1259,9 @@
       "abvError": "Alkoholipitoisuuden on oltava luku välillä 0–100 (%).",
       "volumeError": "Määrän on oltava luku välillä 0–10 000 (litraa).",
       "priceError": "Hinnan on oltava summa välillä 0–100 000 € ja enintään kahdella desimaalilla.",
+      "nearCap": "Tuoterivejä {count}/{max} — {remaining, plural, one {# paikka} other {# paikkaa}} jäljellä.",
+      "capReached": "Skenaariossa voi olla enintään {max} tuotetta.",
+      "capShareHint": "Valmiin skenaarion voi jakaa linkkinä tulosten yhteydessä.",
       "resetForm": "Tyhjennä lomake"
     },
     "category": {
@@ -1703,6 +1712,7 @@
     "copyLink": "Kopioi linkki",
     "copied": "Kopioitu",
     "expiresAt": "Sessio vanhenee: {date}",
+    "nearExpiry": "Sessio päättyy {date}. Pyydä tarvittaessa tilauksen omistajalta uusi linkki.",
     "joinTitle": "Liity tilaukseen",
     "joinBody": "Valitse lempinimi, jolla lisäät tuotteita tilaukseen. Sessioon tallennetaan vain lempinimi.",
     "nicknameLabel": "Lempinimi",

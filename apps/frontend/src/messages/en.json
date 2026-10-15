@@ -152,6 +152,7 @@
     "exampleDifferenceLabel": "Difference against the Finland reference price",
     "exampleDifferenceValue": "In this example importing is about €33.00 cheaper",
     "exampleNote": "The example calculation uses fixed, illustrative figures and fetches no data. Only totals are compared: the difference can also turn the other way, making importing dearer than the reference price. Duty varies by beverage type and strength.",
+    "exampleCalcLink": "Run the same calculation with your own products",
     "taskCardsHeading": "Pick your task",
     "taskCardsShoppingTitle": "What's worth buying?",
     "taskCardsShoppingBody": "A daily updated listing of estimated landed totals and their gap against the Alko reference price, by category.",
@@ -579,6 +580,11 @@
       "EXPIRED": "Expired"
     },
     "computed": "Computed {date}"
+  },
+  "AuthorityLinks": {
+    "heading": "Official sources",
+    "alcoholExcise": "Alcohol excise duty (vero.fi)",
+    "exciseDuties": "Excise duties (vero.fi)"
   },
   "BasketCommon": {
     "addProducts": "Add products",
@@ -1253,6 +1259,9 @@
       "abvError": "Alcohol by volume must be a number between 0 and 100 (%).",
       "volumeError": "Volume must be a number between 0 and 10,000 (litres).",
       "priceError": "The price must be an amount between €0 and €100,000 with at most two decimals.",
+      "nearCap": "Product rows {count}/{max} — {remaining, plural, one {# slot} other {# slots}} left.",
+      "capReached": "A scenario can contain at most {max} products.",
+      "capShareHint": "A finished scenario can be shared as a link from the results.",
       "resetForm": "Clear form"
     },
     "category": {
@@ -1703,6 +1712,7 @@
     "copyLink": "Copy link",
     "copied": "Copied",
     "expiresAt": "Session expires: {date}",
+    "nearExpiry": "The session ends {date}. Ask the order owner for a new link if needed.",
     "joinTitle": "Join the order",
     "joinBody": "Pick a nickname to add items under. Only the nickname is stored in the session.",
     "nicknameLabel": "Nickname",
