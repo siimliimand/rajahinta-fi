@@ -33,6 +33,11 @@
  * that makes VERIFIED reachable: attributed, audited, re-verifiable,
  * and deliberately without an un-verify endpoint.
  *
+ * Task 3.1 (change product-name-quality-gate) adds the name-quality
+ * quarantine queue — the read-only enrichment listing of the rows the
+ * informativeness gate stored quarantined, surfaced with the raw feed
+ * name, the stripped annotation, and the merchant/freshness facts.
+ *
  * EVERY mutating action writes an append-only D1 `audit_events` row via
  * the task-2.5 D1AuditEventRepository (WorkerAuditService).
  *
@@ -2655,6 +2660,62 @@ async function verifyOffer(c: Context<AppEnv>): Promise<Response> {
 }
 
 // ---------------------------------------------------------------------------
+// Name-quality quarantine queue — the enrichment listing (task 3.1,
+// change product-name-quality-gate; spec product-normalization).
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /ops/console/name-quality/quarantined — the operator enrichment
+ * queue: every product_master row the informativeness gate stored
+ * 'quarantined'. Console listing envelope ({ items, total }), full set
+ * with no pagination — the queue is the gate's quarantine share of the
+ * catalog (every other ops listing returns the full set too; only the
+ * audit trail caps its length).
+ *
+ * Raw-name sourcing: for a quarantined row the spec keeps the raw feed
+ * name UNCHANGED as the display name ("preserved unchanged whenever the
+ * display name is transformed or the product is quarantined"), so `name`
+ * IS the raw feed string. There is no persisted raw-feed table to join —
+ * RawFeedRecord lives only inside the ingestion pipeline, and the
+ * original string remains at the merchant source. `name_annotation`
+ * carries the stripped merchant parenthetical commentary when the row
+ * had some.
+ *
+ * Merchant + observed_at come from the product's LATEST retail_offers
+ * observation (product_master has no merchant column; offers are the
+ * per-merchant observations). SQLite's bare-column rule keeps o.merchant
+ * aligned with the MAX(o.observed_at) row. Order = oldest observation
+ * first (the reports-queue convention), never-observed rows — NULL
+ * observed_at — sorting first as the stalest enrichment targets.
+ */
+const QUARANTINED_NAMES_SQL = `
+  SELECT p.id AS product_id, p.name AS name, p.name_annotation AS name_annotation,
+         o.merchant AS merchant, MAX(o.observed_at) AS observed_at
+  FROM product_master p
+  LEFT JOIN retail_offers o ON o.product_id = p.id
+  WHERE p.name_quality = 'quarantined'
+  GROUP BY p.id
+  ORDER BY observed_at ASC, p.id ASC`;
+
+async function listQuarantinedNames(c: Context<AppEnv>): Promise<Response> {
+  const result = await c.env.DB.prepare(QUARANTINED_NAMES_SQL).all<{
+    product_id: number;
+    name: string;
+    name_annotation: string | null;
+    merchant: string | null;
+    observed_at: string | null;
+  }>();
+  const items = result.results.map((row) => ({
+    productId: row.product_id,
+    name: row.name,
+    nameAnnotation: row.name_annotation,
+    merchant: row.merchant,
+    observedAt: row.observed_at,
+  }));
+  return c.json({ items, total: items.length });
+}
+
+// ---------------------------------------------------------------------------
 // Audit trail — real D1 audit_events reads
 // ---------------------------------------------------------------------------
 
@@ -2787,6 +2848,11 @@ export function registerOpsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   // the owner-gated human write path for VERIFIED: attributed, audited,
   // re-verifiable; deliberately no un-verify.
   app.post('/ops/console/offers/:id/verify', verifyOffer);
+
+  // Name-quality quarantine queue (task 3.1, product-name-quality-gate)
+  // — the read-only enrichment listing; rides the /ops/console/* guard
+  // prefix like every console read.
+  app.get('/ops/console/name-quality/quarantined', listQuarantinedNames);
 
   app.get('/ops/console/audit', recentAudit);
   return app;

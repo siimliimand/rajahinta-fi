@@ -380,3 +380,37 @@ export function publishBlogPost(
     body: JSON.stringify(body),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Name-quality quarantine queue (task 3.1, change
+// product-name-quality-gate) — the read-only enrichment listing. Response
+// types are local to the console API module (lib/types.ts is shared
+// surface with other workstreams).
+// ---------------------------------------------------------------------------
+
+/** One quarantined product in the enrichment queue. */
+export interface OpsQuarantinedNameItem {
+  productId: number;
+  /** The raw feed name — preserved unchanged for quarantined rows. */
+  name: string;
+  /** Merchant parenthetical commentary stripped from the name, if any. */
+  nameAnnotation: string | null;
+  /** Merchant of the product's latest observed offer; null = never observed. */
+  merchant: string | null;
+  /** Latest offer observation timestamp; null = never observed. */
+  observedAt: string | null;
+}
+
+export interface OpsQuarantinedNamesResponse {
+  items: OpsQuarantinedNameItem[];
+  total: number;
+}
+
+export function listQuarantinedNames(
+  token: string,
+): Promise<OpsQuarantinedNamesResponse> {
+  return opsFetch<OpsQuarantinedNamesResponse>(
+    token,
+    '/ops/console/name-quality/quarantined',
+  );
+}
