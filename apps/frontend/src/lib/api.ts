@@ -3,7 +3,9 @@
  *
  * All fetch calls go through this module so the base URL, credentials, and
  * headers are configured in one place.  Every function returns typed
- * responses or throws an {@link ApiFetchError} on non-2xx status.
+ * responses or throws an {@link ApiFetchError} — on a non-2xx status or,
+ * carrying a transport failure class, when the fetch never answers at all
+ * (timeout, network; listing-failure-honesty 1.1).
  *
  * Authentication is exclusively the server-issued httpOnly
  * `rajahinta_session` cookie; the client keeps no identity of its own.
@@ -108,24 +110,117 @@ export { SAVINGS_BEST_PER_MERCHANT_PATH };
 // ---------------------------------------------------------------------------
 
 /**
- * Thrown when an API call returns a non-2xx status.
- * Carries the parsed {@link ApiError} body when available.
+ * Coarse class of a failed client fetch (listing-failure-honesty), from
+ * which surfaces pick their distinct failure state:
+ *
+ * - `age-gate` — HTTP 403. On the age-gated catalog reads this is the
+ *   AgeGateGuard's answer and the surface renders the age confirmation
+ *   affordance.
+ * - `rate-limited` — HTTP 429; the surface renders backoff copy.
+ * - `timeout` — the fetch was aborted by its `AbortSignal` before a
+ *   response arrived (`AbortSignal.timeout` rejects with a `TimeoutError`
+ *   DOMException; engines without it surface the same abort as
+ *   `AbortError`).
+ * - `server` — HTTP 5xx.
+ * - `network` — the fetch rejected with no response and no abort
+ *   (`TypeError` and friends).
+ * - `unknown` — honest residual for statuses outside the taxonomy
+ *   (400/401/404 …), the same residual the per-endpoint classifiers
+ *   (`PriceHistoryErrorKind`, `ReportErrorKind`) already carry.
+ */
+export type ApiFailureClass =
+  | 'age-gate'
+  | 'rate-limited'
+  | 'timeout'
+  | 'server'
+  | 'network'
+  | 'unknown';
+
+/**
+ * Derive the {@link ApiFailureClass} of a completed (non-2xx) exchange
+ * from its status. Anything the taxonomy does not cover stays `unknown`
+ * rather than masquerading as a transport failure.
+ */
+function failureClassFromStatus(status: number): ApiFailureClass {
+  if (status === 403) return 'age-gate';
+  if (status === 429) return 'rate-limited';
+  if (status >= 500) return 'server';
+  return 'unknown';
+}
+
+/**
+ * Whether a fetch rejection means the request was aborted by its
+ * `AbortSignal` (→ `timeout`) rather than failing on the wire. Matched by
+ * `name` across both `DOMException` and `Error` because engines disagree
+ * on which of the two an abort surfaces as.
+ */
+function isAbortRejection(err: unknown): boolean {
+  return (
+    (err instanceof DOMException || err instanceof Error) &&
+    (err.name === 'AbortError' || err.name === 'TimeoutError')
+  );
+}
+
+/**
+ * Wrap a fetch rejection that never produced an HTTP response in the
+ * shared {@link ApiFetchError} contract, so every client failure — not
+ * only non-2xx answers — carries its {@link ApiFailureClass}: an abort
+ * (including `AbortSignal.timeout`) classifies as `timeout`, everything
+ * else as `network`. Status is 0 — the no-response marker — and body and
+ * `requestId` are null because no exchange happened. The original
+ * rejection rides in `cause`: its stack is the CORS/network detail the
+ * browser otherwise hides, and its message stays in the error message so
+ * existing logs lose no detail.
+ */
+function transportFailure(err: unknown): ApiFetchError {
+  const aborted = isAbortRejection(err);
+  const detail =
+    err instanceof Error && err.message !== '' ? `: ${err.message}` : '';
+  return new ApiFetchError(0, null, null, {
+    failureClass: aborted ? 'timeout' : 'network',
+    message: aborted
+      ? `API request aborted${detail}`
+      : `API request failed${detail}`,
+    cause: err,
+  });
+}
+
+/**
+ * Thrown when an API call fails: a non-2xx status, or the fetch itself
+ * failing before any response (timeout, network — {@link transportFailure}).
+ * Carries the parsed {@link ApiError} body when available plus the derived
+ * {@link ApiFailureClass}.
  *
  * `requestId` is the API's echoed `x-request-id` (the request-logging
  * middleware returns it on every response) — surfaced so support and log
  * correlation never depend on the user reading a network panel.
  */
 export class ApiFetchError extends Error {
+  /** HTTP status; 0 when no response arrived (timeout, network). */
   readonly status: number;
   readonly body: ApiError | null;
   readonly requestId: string | null;
+  /** Coarse failure class a surface's distinct failure state derives from. */
+  readonly failureClass: ApiFailureClass;
 
-  constructor(status: number, body: ApiError | null, requestId?: string | null) {
-    super(body?.message ?? `API returned ${status}`);
+  constructor(
+    status: number,
+    body: ApiError | null,
+    requestId?: string | null,
+    options?: {
+      failureClass?: ApiFailureClass;
+      message?: string;
+      cause?: unknown;
+    },
+  ) {
+    super(options?.message ?? body?.message ?? `API returned ${status}`, {
+      cause: options?.cause,
+    });
     this.name = 'ApiFetchError';
     this.status = status;
     this.body = body;
     this.requestId = requestId ?? null;
+    this.failureClass = options?.failureClass ?? failureClassFromStatus(status);
   }
 }
 
@@ -303,7 +398,10 @@ export async function translateResponse<T>(res: Response): Promise<T> {
 }
 
 /**
- * Perform one HTTP exchange and translate non-2xx into {@link ApiFetchError}.
+ * Perform one HTTP exchange and translate failures into
+ * {@link ApiFetchError}: non-2xx answers carry the parsed body, and a
+ * fetch that never answers (timeout, network) carries the matching
+ * transport failure class.
  */
 async function executeRequest<T>(
   path: string,
@@ -315,11 +413,18 @@ async function executeRequest<T>(
   // sent. Same-origin deployments work as-is; a cross-domain API origin must
   // answer CORS with an explicit origin (never "*") and `credentials: true`
   // or the browser drops the cookie.
-  const res = await apiFetch(path, {
-    ...init,
-    credentials: 'include',
-    headers,
-  });
+  let res: Response;
+  try {
+    res = await apiFetch(path, {
+      ...init,
+      credentials: 'include',
+      headers,
+    });
+  } catch (err: unknown) {
+    // No HTTP response — classify the rejection itself so every client
+    // failure carries a failure class, not only non-2xx answers.
+    throw transportFailure(err);
+  }
 
   return translateResponse<T>(res);
 }
@@ -905,6 +1010,13 @@ export function classifyPriceHistoryError(
   err: unknown,
 ): { kind: PriceHistoryErrorKind; error: ApiFetchError | null } {
   if (err instanceof ApiFetchError) {
+    // request() wraps transport rejections (no HTTP response) in
+    // ApiFetchError; keep the established mapping where every such
+    // failure — network or timeout alike — surfaced as kind 'network'
+    // with no error object (ProductHistoryPanel treats it as retryable).
+    if (err.failureClass === 'network' || err.failureClass === 'timeout') {
+      return { kind: 'network', error: null };
+    }
     if (err.status === 400) return { kind: 'validation', error: err };
     if (err.status === 403) return { kind: 'forbidden', error: err };
     if (err.status === 429) return { kind: 'rate-limited', error: err };
