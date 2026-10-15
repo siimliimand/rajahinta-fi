@@ -52,6 +52,8 @@ const PRODUCT = {
   depositSystemStatus: false,
   ean: '0642000123456',
   reviewHoldReason: null, // not held (change nonalcoholic-catalog-hygiene)
+    nameQuality: 'ok',
+    nameAnnotation: null, // migration 0037 defaults; no merchant annotation
   weightGrams: 520, // 0.33 l glass bottle, filled
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
