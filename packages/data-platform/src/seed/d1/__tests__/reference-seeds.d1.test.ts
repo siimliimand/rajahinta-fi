@@ -81,6 +81,7 @@ describe('reference seed generators — registration + shape', () => {
       'source-governance.d1.sql',
       'consumption-norms.d1.sql',
       'carrier-box-types.d1.sql',
+      'calendar-events.d1.sql',
     ]);
   });
 
