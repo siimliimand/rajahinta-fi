@@ -16,5 +16,5 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Update/extend component tests for the touched surfaces (ranking accuracy state, basket limit states, compare/what-if/group-order disclosures, calculator links, homepage link) and run typecheck + eslint <!-- agent: platform-engineer.fast, depends_on: [1.1, 2.1, 2.2, 3.1, 3.2], touches: [] -->
-- [ ] 4.2 Run the content-vocabulary linting suite; both locales pass <!-- agent: platform-engineer.fast, depends_on: [4.1], touches: [] -->
+- [x] 4.1 Update/extend component tests for the touched surfaces (ranking accuracy state, basket limit states, compare/what-if/group-order disclosures, calculator links, homepage link) and run typecheck + eslint <!-- agent: platform-engineer.fast, depends_on: [1.1, 2.1, 2.2, 3.1, 3.2], touches: [] --> (2a9ecd0; 18 new tests across 9 files, tsc + eslint clean, suite 1598/1598; also removed the stale unreferenced AccuracyStat.emptyBody key from both catalogs — touches was [] but the cleanup is i18n hygiene belonging to this verification)
+- [x] 4.2 Run the content-vocabulary linting suite; both locales pass <!-- agent: platform-engineer.fast, depends_on: [4.1], touches: [] --> (PASS: lint:content exit 0 over both catalogs, content-policy suite 261/261, key-parity suite 36/36 incl. bidirectional fi↔en checks)
