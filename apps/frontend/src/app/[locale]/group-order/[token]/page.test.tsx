@@ -32,6 +32,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import GroupOrderSessionView from '../session-view';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import { ApiFetchError, fetchProductsByIds, request, searchProducts } from '@/lib/api';
+import { formatTimestamp } from '../money';
 import type {
   ApiError,
   ProductSearchResult,
@@ -514,5 +515,63 @@ describe('GroupOrderSessionView', () => {
     expect(
       await screen.findByTestId('group-order-unvalued-item'),
     ).toHaveTextContent('Arvoa ei tiedossa');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Near-expiry disclosure (audit-copy-batch task 2.2, spec web-application
+// "Tool-limit disclosure"): over the last 24 h of the server-set 7-day
+// lifetime the active session's remaining time is called out. The
+// warning reads the server timestamp only — no client-side countdown —
+// and the plain expiry line outside the window is unchanged.
+// ---------------------------------------------------------------------------
+
+describe('GroupOrderSessionView near-expiry disclosure (audit-copy-batch 2.2)', () => {
+  function joinStateExpiring(expiresAt: string): JoinResponse {
+    return { ...joinState(), session: { ...joinState().session, expiresAt } };
+  }
+
+  function isoInMs(ms: number): string {
+    return new Date(Date.now() + ms).toISOString();
+  }
+
+  /** Render, join as Matti against the given expiry, reach the active view. */
+  async function joinWithExpiry(
+    user: ReturnType<typeof userEvent.setup>,
+    expiresAt: string,
+  ): Promise<void> {
+    mockRoutes({ join: async () => joinStateExpiring(expiresAt) });
+    renderWithIntl(<GroupOrderSessionView token="tok" />);
+    await user.type(screen.getByLabelText('Lempinimi'), 'Matti');
+    await user.click(screen.getByRole('button', { name: 'Liity' }));
+    await screen.findByTestId('group-order-participants');
+  }
+
+  it('over 24 h of remaining time renders only the unchanged plain expiry line', async () => {
+    const user = userEvent.setup();
+    const expiresAt = isoInMs(3 * 24 * 60 * 60 * 1000);
+    await joinWithExpiry(user, expiresAt);
+
+    const page = screen.getByTestId('group-order-session-page');
+    expect(page).toHaveTextContent(
+      `Sessio vanhenee: ${formatTimestamp(expiresAt, 'fi')}`,
+    );
+    expect(screen.queryByTestId('group-order-near-expiry')).toBeNull();
+  });
+
+  it('within 24 h of remaining time the near-expiry line renders with the formatted date', async () => {
+    const user = userEvent.setup();
+    const expiresAt = isoInMs(2 * 60 * 60 * 1000);
+    await joinWithExpiry(user, expiresAt);
+
+    const warning = await screen.findByTestId('group-order-near-expiry');
+    expect(warning).toHaveTextContent(
+      `Sessio päättyy ${formatTimestamp(expiresAt, 'fi')}.`,
+    );
+    // The recovery affordance rides on the warning: the link owner can
+    // issue a fresh one.
+    expect(warning).toHaveTextContent(
+      'Pyydä tarvittaessa tilauksen omistajalta uusi linkki.',
+    );
   });
 });

@@ -85,6 +85,21 @@ export default function WhatIfForm({
 
   const rowNumber = new Map(rows.map((row, index) => [row.key, index + 1]));
 
+  /**
+   * Limit disclosures (audit-copy-batch task 2.2, spec web-application
+   * "Tool-limit disclosure"): the remaining row capacity is named from
+   * four free rows onward (a fifth of the cap — five slots, the 30-item
+   * basket's window, would be a quarter of it); at the 20-row cap the
+   * at-limit message names the constraint and points to the scenario's
+   * own alternative affordance — the share link. The cap's reason is not
+   * stated: the disclosure never asserts a reason the platform has not
+   * documented.
+   */
+  const CAP_PROXIMITY_ROWS = 4;
+  const atCap = rows.length >= DRAFT_BOUNDS.maxProducts;
+  const nearCap =
+    !atCap && rows.length >= DRAFT_BOUNDS.maxProducts - CAP_PROXIMITY_ROWS;
+
   // Task 3.3: the slider's unit names the physical unit of the draft's
   // rate family — never the internal formula unit.
   const rateUnit = t(`unit.${scenarioRateFamily(rows.map((row) => row.category))}`);
@@ -132,6 +147,21 @@ export default function WhatIfForm({
           {t('form.rowCount', { count: rows.length, max: DRAFT_BOUNDS.maxProducts })}
         </p>
       </div>
+
+      {/* Proximity disclosure (task 2.2): remaining capacity before the
+          next add is refused. */}
+      {nearCap && (
+        <p
+          data-testid="what-if-cap-proximity"
+          className="mb-3 text-xs text-amber-700"
+        >
+          {t('form.nearCap', {
+            count: rows.length,
+            max: DRAFT_BOUNDS.maxProducts,
+            remaining: DRAFT_BOUNDS.maxProducts - rows.length,
+          })}
+        </p>
+      )}
 
       <div className="space-y-3">
         {rows.map((row) => {
@@ -278,6 +308,20 @@ export default function WhatIfForm({
           {t('form.recalculate')}
         </Button>
       </div>
+
+      {/* At-limit disclosure (task 2.2): the disabled add-row button at
+          the 20-product cap is explained, and the scenario's alternative
+          affordance — sharing the computed scenario as a link — is named. */}
+      {atCap && (
+        <div data-testid="what-if-cap-reached" className="mt-3">
+          <p className="text-sm text-amber-700">
+            {t('form.capReached', { max: DRAFT_BOUNDS.maxProducts })}
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-gray-600">
+            {t('form.capShareHint')}
+          </p>
+        </div>
+      )}
 
       {invalidNotice && (
         <p role="status" data-testid="what-if-invalid-hint" className="mt-3 text-xs text-gray-500">

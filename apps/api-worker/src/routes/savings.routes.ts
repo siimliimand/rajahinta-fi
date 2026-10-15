@@ -1,6 +1,7 @@
 /**
  * Savings discovery routes (spec savings-discovery) — the per-category
- * listing GET /api/v1/savings (task 2.3, change insight-surfaces), the
+ * listing GET /api/v1/savings (task 2.3, change insight-surfaces;
+ * honest-framing eligibility, change savings-honest-framing), the
  * cross-category overview GET /api/v1/savings/overview, the
  * cross-category top-N GET /api/v1/savings/top (task 1.1, change
  * homepage-live-gap-hero; 3-day eligible-day fallback, change
@@ -32,6 +33,10 @@
  *   as-of day (rows exist only for products with a usable reference).
  * - `listed` — the rows returned for the requested category after
  *   ordering and the limit clamp.
+ * - `hasFavourable` — whether the category holds at least one eligible
+ *   row (negative gap, not self-paired, staleness-defended), read
+ *   before the limit clamp so a favourable row beyond the limit still
+ *   marks the category favourable (change savings-honest-framing).
  *
  * ## Category and rows
  *
@@ -43,6 +48,20 @@
  * from the registry) is stale data — it is excluded before ordering and
  * counting, never guessed into a position. An unknown category returns
  * 200 with an empty list and the counts — never an error.
+ *
+ * ## Honest framing — the listing's eligibility (change
+ * savings-honest-framing)
+ *
+ * The listing answers one question — what imports cheaper than the
+ * domestic reference — so it admits only negative-gap rows (gapCents
+ * < 0, the landed total below the Alko reference; the top-N route's
+ * sign) and never a self-paired row: an offer whose merchant is
+ * `alko` sits against Alko's own reference — no cross-border
+ * comparison (the best-per-merchant route's exclusion). The filters
+ * run before the ordering, so the surviving rows keep the
+ * deterministic order; a category with no surviving row answers the
+ * honest zero state — empty rows, the counts, the as-of date, and
+ * `hasFavourable: false` — never the least-negative positive-gap rows.
  *
  * ## Best per merchant — derivation decision
  *
@@ -302,7 +321,19 @@ async function getSavings(c: Context<AppEnv>): Promise<Response> {
       row.alkoReferenceCents !== null,
   );
 
-  const inCategory = withReference.filter((row) => row.category === category);
+  // Honest framing (change savings-honest-framing; module docblock):
+  // only negative-gap rows — the landed total below the Alko
+  // reference, the top-N route's favourable sign — and never a
+  // self-pair (offer merchant `alko`, the reference side of every
+  // stored gap — the best-per-merchant route's exclusion). A loss row
+  // is never listed as a saving; the category answers the honest zero
+  // state instead of its least-negative loss.
+  const inCategory = withReference.filter(
+    (row) =>
+      row.category === category &&
+      row.gapCents < 0 &&
+      row.bestMerchant !== 'alko',
+  );
   const snapshotByProductId = new Map(
     inCategory.map((row) => [row.productId, row] as const),
   );
@@ -340,6 +371,10 @@ async function getSavings(c: Context<AppEnv>): Promise<Response> {
       withReference: withReference.length,
       listed: rows.length,
     },
+    // Key order fixed by construction (byte-identical body per D1
+    // state). Read off the filtered set before the limit clamp — see
+    // the coverage docblock.
+    hasFavourable: values.length > 0,
     rows,
   });
 }

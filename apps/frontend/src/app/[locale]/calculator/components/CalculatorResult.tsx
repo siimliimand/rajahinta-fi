@@ -22,6 +22,7 @@ import { ConfidenceBadge, ReliabilityBadge } from '@/components/ui';
 import ConfidenceMeter from '../../components/ConfidenceMeter';
 import { MerchantLink } from '../../compare/components/MerchantLink';
 import DisclaimerBanner from './DisclaimerBanner';
+import AuthoritySourceLinks from './AuthoritySourceLinks';
 import OutcomeNudge from './OutcomeNudge';
 import ReportExportActions from './ReportExportActions';
 import SanityNoteList from './SanityNoteList';
@@ -432,6 +433,11 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
           totalCents={result.totalCents}
         />
       </div>
+
+      {/* ── Contextual authority links (audit-copy-batch task 3.1) —
+          the declaration guidance panel's official-source set beside the
+          totals, where the result points the visitor at the authorities. ── */}
+      <AuthoritySourceLinks />
 
       {/* ── Savings summary (task 5.1) — display-only: prominent factual
           statement derived from the alkoBenchmark above; never a cost

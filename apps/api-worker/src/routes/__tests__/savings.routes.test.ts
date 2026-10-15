@@ -10,13 +10,20 @@
  * zero state (unknown category → 200 with an empty list AND the counts,
  * never an error), the coverage counts on every response (evaluated =
  * registry count, with-reference = latest-day rows, listed = returned
- * rows), the latest-day-only read (an older day's row is invisible),
+ * rows), the honest-framing eligibility (change savings-honest-framing:
+ * only negative-gap non-self-paired rows list, `hasFavourable` marks a
+ * category with a surviving row, and /top's contract stays untouched),
+ * the latest-day-only read (an older day's row is invisible),
  * per-row reliability + confidence, the limit clamp (top-N by the same
  * order, default 200, capped at 500), category validation (400), the
  * age gate (403 without confirmation), and the mixed-provenance listing
  * (task 4.3, change alko-reference-matching-pipeline: direct and linked
  * rows count, order, and render identically — the link id never leaves
  * D1).
+ *
+ * Fixture rows are import-favourable by default (negative gap — the
+ * listing's subject); a dearer-than-reference row is seeded with an
+ * explicit positive `gapCents`.
  *
  * @module SavingsRoutesTest
  */
@@ -79,6 +86,7 @@ interface SavingsJson {
   asOf: string | null;
   category: string;
   coverage: { evaluated: number; withReference: number; listed: number };
+  hasFavourable: boolean;
   rows: SavingsRowJson[];
 }
 
@@ -90,7 +98,12 @@ async function getBeerListing(
   return request(app, env, `/api/v1/savings${query}`, { headers: AGE_OK });
 }
 
-/** Seed one registry product plus its snapshot row (real repositories). */
+/**
+ * Seed one registry product plus its snapshot row (real repositories).
+ * The default gap is import-favourable (negative) — the listing's
+ * subject; a dearer-than-reference row passes an explicit positive
+ * `gapCents`.
+ */
 async function seedSnapshot(
   db: DatabaseSync,
   d1: D1DatabaseLike,
@@ -133,7 +146,7 @@ async function seedSnapshot(
     landedTotalCents: 1200,
     landedReliability: seed.reliability ?? 'ESTIMATED',
     confidence: seed.confidence ?? 'HIGH',
-    gapCents: seed.gapCents ?? 200,
+    gapCents: seed.gapCents ?? -200,
     gapBasisPoints: seed.gapBasisPoints,
     taxDatasetVersion: 'v3.0-2026',
     referenceLinkId: seed.referenceLinkId ?? null,
@@ -165,11 +178,11 @@ describe('GET /api/v1/savings — deterministic listing', () => {
     const { db, d1 } = openMigratedD1();
     // Equal-gap pair breaks by name ascending; the wine row and the
     // previous-day row must stay out of the beer listing and its counts.
-    await seedSnapshot(db, d1, { productId: 1, name: 'Aurora Lager', category: 'beer', gapBasisPoints: 500 });
-    await seedSnapshot(db, d1, { productId: 2, name: 'Borealis Porter', category: 'beer', gapBasisPoints: 500 });
-    await seedSnapshot(db, d1, { productId: 3, name: 'Cider Zest', category: 'beer', gapBasisPoints: 900 });
-    await seedSnapshot(db, d1, { productId: 4, name: 'Merlot Fragment', category: 'wine', gapBasisPoints: 2000 });
-    await seedSnapshot(db, d1, { productId: 5, name: 'Stale Ale', category: 'beer', gapBasisPoints: 5000, asOf: DAY_BEFORE });
+    await seedSnapshot(db, d1, { productId: 1, name: 'Aurora Lager', category: 'beer', gapBasisPoints: -900 });
+    await seedSnapshot(db, d1, { productId: 2, name: 'Borealis Porter', category: 'beer', gapBasisPoints: -900 });
+    await seedSnapshot(db, d1, { productId: 3, name: 'Cider Zest', category: 'beer', gapBasisPoints: -500 });
+    await seedSnapshot(db, d1, { productId: 4, name: 'Merlot Fragment', category: 'wine', gapBasisPoints: -2000 });
+    await seedSnapshot(db, d1, { productId: 5, name: 'Stale Ale', category: 'beer', gapBasisPoints: -5000, asOf: DAY_BEFORE });
     const app = savingsApp();
     const env = savingsEnv(d1);
 
@@ -179,11 +192,11 @@ describe('GET /api/v1/savings — deterministic listing', () => {
     const second = (await (await getBeerListing(app, env)).json()) as SavingsJson;
 
     // Deterministic order, identical across reads: gap ascending — the
-    // 500-bps rows (the larger savings here) lead, name asc on the tie.
+    // −900-bps rows (the larger savings here) lead, name asc on the tie.
     expect(body.rows.map((r) => r.productName)).toEqual([
-      'Aurora Lager', // 500 bps first, name asc…
+      'Aurora Lager', // −900 bps first, name asc…
       'Borealis Porter', // …Aurora < Borealis
-      'Cider Zest', // 900 bps (largest loss) last
+      'Cider Zest', // −500 bps (smallest saving) last
     ]);
     expect(body.rows).toEqual(second.rows);
     expect(body.asOf).toBe(AS_OF);
@@ -199,8 +212,8 @@ describe('GET /api/v1/savings — deterministic listing', () => {
       productId: 1,
       name: 'Aurora Lager',
       category: 'beer',
-      gapBasisPoints: 500,
-      gapCents: 200,
+      gapBasisPoints: -500,
+      gapCents: -200,
       reliability: 'VERIFIED',
       confidence: 'MEDIUM',
       merchant: 'systembolaget',
@@ -224,8 +237,8 @@ describe('GET /api/v1/savings — deterministic listing', () => {
       priceCents: 750,
       landedTotalCents: 1200,
       alkoReferenceCents: 1000,
-      gapCents: 200,
-      gapBasisPoints: 500,
+      gapCents: -200,
+      gapBasisPoints: -500,
       reliability: 'VERIFIED',
       confidence: 'MEDIUM',
       taxDatasetVersion: 'v3.0-2026',
@@ -250,18 +263,18 @@ describe('GET /api/v1/savings — mixed provenance (direct + linked rows)', () =
     seedProduct(db, { id: 91, name: 'Alko Vertti II', category: 'beer' });
     seedConfirmedLink(db, { id: 1, foreignProductId: 2, alkoProductId: 90 });
     seedConfirmedLink(db, { id: 2, foreignProductId: 3, alkoProductId: 91 });
-    await seedSnapshot(db, d1, { productId: 1, name: 'Aurora Lager', category: 'beer', gapBasisPoints: 500, skipProductSeed: true });
+    await seedSnapshot(db, d1, { productId: 1, name: 'Aurora Lager', category: 'beer', gapBasisPoints: -900, skipProductSeed: true });
     await seedSnapshot(db, d1, {
       productId: 2,
       name: 'Borealis Porter',
       category: 'beer',
-      gapBasisPoints: 900,
+      gapBasisPoints: -500,
       referenceLinkId: 1,
       reliability: 'VERIFIED',
       confidence: 'MEDIUM',
       skipProductSeed: true,
     });
-    await seedSnapshot(db, d1, { productId: 3, name: 'Cider Zest', category: 'beer', gapBasisPoints: 500, referenceLinkId: 2, skipProductSeed: true });
+    await seedSnapshot(db, d1, { productId: 3, name: 'Cider Zest', category: 'beer', gapBasisPoints: -900, referenceLinkId: 2, skipProductSeed: true });
     const app = savingsApp();
 
     const body = (await (
@@ -271,8 +284,8 @@ describe('GET /api/v1/savings — mixed provenance (direct + linked rows)', () =
     // Counts are provenance-blind: registry (5) / latest-day rows whether
     // direct or linked (3) / returned rows (3).
     expect(body.coverage).toEqual({ evaluated: 5, withReference: 3, listed: 3 });
-    // The pinned order is untouched by provenance: the equal 500-bps
-    // pair by name ascending first, 900 bps last — linked, direct,
+    // The pinned order is untouched by provenance: the equal −900-bps
+    // pair by name ascending first, −500 bps last — direct, linked,
     // linked, interleaved purely by the sort rule.
     expect(body.rows.map((r) => r.productName)).toEqual([
       'Aurora Lager',
@@ -291,7 +304,7 @@ describe('GET /api/v1/savings — mixed provenance (direct + linked rows)', () =
       expect(Object.keys(row).sort()).toEqual(expectedKeys);
     }
     // The per-row figures flow for linked rows exactly as for direct ones
-    // (the 900-bps linked row is last in ascending order).
+    // (the −500-bps linked row is last in ascending order).
     expect(body.rows[2]).toMatchObject({
       productId: 2,
       merchant: 'saksoinet',
@@ -332,11 +345,164 @@ describe('GET /api/v1/savings — honest zero states and coverage', () => {
   });
 });
 
+describe('GET /api/v1/savings — honest-framing eligibility (savings-honest-framing)', () => {
+  it('answers the honest zero state — empty rows, hasFavourable: false, populated counts — when the category holds no negative-gap row', async () => {
+    const { db, d1 } = openMigratedD1();
+    // Every beer row is dearer than its reference (positive gap): the
+    // listing admits none of them — never the least-negative loss.
+    await seedSnapshot(db, d1, { productId: 1, name: 'Dearer Ale', category: 'beer', gapCents: 200, gapBasisPoints: 500 });
+    await seedSnapshot(db, d1, { productId: 2, name: 'Dearer Porter', category: 'beer', gapCents: 300, gapBasisPoints: 750 });
+    const app = savingsApp();
+
+    const body = (await (
+      await getBeerListing(app, savingsEnv(d1))
+    ).json()) as SavingsJson;
+
+    expect(body.asOf).toBe(AS_OF);
+    expect(body.rows).toEqual([]);
+    expect(body.hasFavourable).toBe(false);
+    // The counts stay populated: the rows materialized — they are just
+    // not eligible savings.
+    expect(body.coverage).toEqual({ evaluated: 2, withReference: 2, listed: 0 });
+    // The marker sits between coverage and rows — the key order is
+    // fixed by construction.
+    expect(Object.keys(body)).toEqual([
+      'asOf', 'category', 'coverage', 'hasFavourable', 'rows',
+    ]);
+  });
+
+  it('excludes the self-paired row (Alko offer vs its own reference) while the cross-border sibling survives', async () => {
+    const { db, d1 } = openMigratedD1();
+    // The self-pair: an `alko` offer sits against Alko's own reference —
+    // no cross-border comparison — so it stays out of the listing even
+    // with the favourable gap sign.
+    await seedSnapshot(db, d1, {
+      productId: 1,
+      name: 'Alko Own Ale',
+      category: 'beer',
+      gapCents: -400,
+      gapBasisPoints: -1000,
+      merchant: 'alko',
+      merchantCountry: 'FI',
+    });
+    // The sibling: a genuine cross-border offer, same favourable sign.
+    await seedSnapshot(db, d1, { productId: 2, name: 'Saksoinet Ale', category: 'beer', gapCents: -200, gapBasisPoints: -500 });
+    const app = savingsApp();
+
+    const body = (await (
+      await getBeerListing(app, savingsEnv(d1))
+    ).json()) as SavingsJson;
+
+    expect(body.rows.map((r) => r.productName)).toEqual(['Saksoinet Ale']);
+    expect(body.rows[0]).toMatchObject({ productId: 2, merchant: 'saksoinet', gapCents: -200 });
+    // withReference counts BOTH rows — the self-pair is filtered from
+    // the listing, not missing from the snapshot — while listed and
+    // hasFavourable read the survivors only.
+    expect(body.coverage).toEqual({ evaluated: 2, withReference: 2, listed: 1 });
+    expect(body.hasFavourable).toBe(true);
+  });
+
+  it('keeps the surviving rows in the deterministic order — filtering never reorders — and repeats identically', async () => {
+    const { db, d1 } = openMigratedD1();
+    // Inserted out of sorted order on purpose: −500, then −900, then
+    // −250. The route filters first and sorts after, so the survivors
+    // must come out in the core-domain order (gap bps ascending, name
+    // ascending, id as the final tie) — never insertion order — with the
+    // ineligible rows (a dearer row, a self-pair) filtered away silently.
+    await seedSnapshot(db, d1, { productId: 1, name: 'Mid Ale', category: 'beer', gapCents: -200, gapBasisPoints: -500 });
+    await seedSnapshot(db, d1, { productId: 2, name: 'Best Ale', category: 'beer', gapCents: -400, gapBasisPoints: -900 });
+    await seedSnapshot(db, d1, { productId: 3, name: 'Small Ale', category: 'beer', gapCents: -100, gapBasisPoints: -250 });
+    await seedSnapshot(db, d1, { productId: 4, name: 'Dearer Ale', category: 'beer', gapCents: 200, gapBasisPoints: 500 });
+    await seedSnapshot(db, d1, {
+      productId: 5,
+      name: 'Self-Pair Ale',
+      category: 'beer',
+      gapCents: -600,
+      gapBasisPoints: -1500,
+      merchant: 'alko',
+      merchantCountry: 'FI',
+    });
+    const app = savingsApp();
+    const env = savingsEnv(d1);
+
+    const first = await getBeerListing(app, env);
+    expect(first.status).toBe(200);
+    const body = (await first.json()) as SavingsJson;
+    const second = (await (await getBeerListing(app, env)).json()) as SavingsJson;
+
+    // Full field-by-field equality on the surviving three, in the
+    // sorted order — the ineligible pair left no trace.
+    expect(body.rows.map((r) => [r.productId, r.gapBasisPoints])).toEqual([
+      [2, -900],
+      [1, -500],
+      [3, -250],
+    ]);
+    // Byte-stable across requests: identical rows, identical order.
+    expect(body.rows).toEqual(second.rows);
+    expect(body.hasFavourable).toBe(true);
+    expect(body.coverage).toEqual({ evaluated: 5, withReference: 5, listed: 3 });
+  });
+
+  it('marks hasFavourable true when a survivor exists — the eligible set is read before the limit clamp', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedSnapshot(db, d1, { productId: 1, name: 'Cheap Ale', category: 'beer', gapCents: -300, gapBasisPoints: -750 });
+    await seedSnapshot(db, d1, { productId: 2, name: 'Cheaper Porter', category: 'beer', gapCents: -200, gapBasisPoints: -500 });
+    const app = savingsApp();
+
+    const body = (await (
+      await getBeerListing(app, savingsEnv(d1), '?category=beer&limit=1')
+    ).json()) as SavingsJson;
+
+    expect(body.rows).toHaveLength(1);
+    expect(body.coverage.listed).toBe(1);
+    // The marker reads the full eligible set, not the clamped list.
+    expect(body.hasFavourable).toBe(true);
+  });
+
+  it('leaves /top untouched: no hasFavourable key, the prior shape, and the self-paired row still listed there', async () => {
+    const { db, d1 } = openMigratedD1();
+    // The same two-row fixture feeds both surfaces: the self-pair is
+    // ineligible for the listing only — /top's contract (task 1.1,
+    // change homepage-live-gap-hero) intentionally does not exclude it.
+    await seedSnapshot(db, d1, {
+      productId: 1,
+      name: 'Alko Own Ale',
+      category: 'beer',
+      gapCents: -400,
+      gapBasisPoints: -1000,
+      merchant: 'alko',
+      merchantCountry: 'FI',
+    });
+    await seedSnapshot(db, d1, { productId: 2, name: 'Saksoinet Ale', category: 'beer', gapCents: -200, gapBasisPoints: -500 });
+    const app = savingsApp();
+
+    const listing = (await (
+      await getBeerListing(app, savingsEnv(d1))
+    ).json()) as SavingsJson;
+    expect(listing.rows.map((r) => r.productName)).toEqual(['Saksoinet Ale']);
+
+    const top = (await (
+      await request(app, savingsEnv(d1), '/api/v1/savings/top', { headers: AGE_OK })
+    ).json()) as Record<string, unknown>;
+    // The top-N shape is exactly as before the change: no hasFavourable
+    // key, the same coverage keys — and the self-pair row still present,
+    // most-negative gap first.
+    expect(Object.keys(top)).toEqual(['asOf', 'coverage', 'rows']);
+    expect(top.coverage).toEqual({ evaluated: 2, importFavourable: 2, listed: 2 });
+    expect(
+      (top.rows as { productName: string }[]).map((r) => r.productName),
+    ).toEqual([
+      'Alko Own Ale', // −1000 bps leads…
+      'Saksoinet Ale', // …then −500 bps
+    ]);
+  });
+});
+
 describe('GET /api/v1/savings — limit clamp', () => {
   async function seedThreeBeerRows(db: DatabaseSync, d1: D1DatabaseLike): Promise<void> {
-    await seedSnapshot(db, d1, { productId: 1, name: 'Ale A', category: 'beer', gapBasisPoints: 100 });
-    await seedSnapshot(db, d1, { productId: 2, name: 'Ale B', category: 'beer', gapBasisPoints: 300 });
-    await seedSnapshot(db, d1, { productId: 3, name: 'Ale C', category: 'beer', gapBasisPoints: 200 });
+    await seedSnapshot(db, d1, { productId: 1, name: 'Ale A', category: 'beer', gapBasisPoints: -300 });
+    await seedSnapshot(db, d1, { productId: 2, name: 'Ale B', category: 'beer', gapBasisPoints: -100 });
+    await seedSnapshot(db, d1, { productId: 3, name: 'Ale C', category: 'beer', gapBasisPoints: -200 });
   }
 
   it('returns the top-N rows in listing order for a small limit', async () => {
@@ -347,7 +513,8 @@ describe('GET /api/v1/savings — limit clamp', () => {
     const body = (await (
       await getBeerListing(app, savingsEnv(d1), '?category=beer&limit=2')
     ).json()) as SavingsJson;
-    // Gap ascending: 100 → 200 → 300 bps, so the top-2 are Ale A and Ale C.
+    // Gap ascending: −300 → −200 → −100 bps (largest saving first), so
+    // the top-2 are Ale A and Ale C.
     expect(body.rows.map((r) => r.productName)).toEqual(['Ale A', 'Ale C']);
     expect(body.coverage.listed).toBe(2);
     // The counts stay honest above the clamp.
@@ -372,7 +539,7 @@ describe('GET /api/v1/savings — limit clamp', () => {
         productId: id,
         name: `Bulk Ale ${id}`,
         category: 'beer',
-        gapBasisPoints: id,
+        gapBasisPoints: -id,
       });
     }
 

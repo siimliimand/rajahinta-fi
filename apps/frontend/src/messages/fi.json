@@ -152,6 +152,7 @@
     "exampleDifferenceLabel": "Ero Suomen vertailuhintaan",
     "exampleDifferenceValue": "Esimerkissä tuonti on noin 33,00 € edullisempi",
     "exampleNote": "Esimerkkilaskelma käyttää kiinteitä kuvitteellisia lukuja eikä hae tietoja. Vain kokonaishintoja verrataan: ero voi kääntyä myös toisin, jolloin tuonti on vertailuhintaa kalliimpi. Veron määrä vaihtelee juomatyypin ja vahvuuden mukaan.",
+    "exampleCalcLink": "Tee sama laskelma omilla tuotteillasi",
     "taskCardsHeading": "Valitse tilanteesi",
     "taskCardsShoppingTitle": "Mitä kannattaa ostaa?",
     "taskCardsShoppingBody": "Päivittäin päivitetty luettelo arvioiduista kokonaishinnoista ja niiden erosta Alkon viitehintaan kategorioittain.",
@@ -580,12 +581,20 @@
     },
     "computed": "Laskettu {date}"
   },
+  "AuthorityLinks": {
+    "heading": "Viranomaislähteet",
+    "alcoholExcise": "Alkoholivalmistevero (vero.fi)",
+    "exciseDuties": "Valmisteverot (vero.fi)"
+  },
   "BasketCommon": {
     "addProducts": "Lisää tuotteita",
     "basketFull": "Ostoskori on täynnä (enintään {max} tuotetta). Poista tuote lisätäksesi toisen.",
     "basketTitle": "Ostoskori ({count}/{max})",
     "emptyBasket": "Tuotteita ei ole vielä lisätty. Käytä yllä olevaa hakua tuotteiden lisäämiseen.",
     "maxReached": "Enimmäismäärä {max} tuotetta saavutettu. Poista tuote lisätäksesi toisen.",
+    "nearCap": "Kori {count}/{max} — vielä {remaining, plural, one {# paikka} other {# paikkaa}}.",
+    "capReason": "Jokainen lisätty tuote kasvattaa laskennassa vertailtavien yhdistelmien määrää, joten korin koko on rajattu {max} tuotteeseen.",
+    "capGroupOrder": "Suurempiin yhteisiin ostoksiin sopii <link>ryhmätilaus</link>: jokainen osallistuja lisää omat tuotteensa samaan sessioon.",
     "removeAria": "Poista {name}",
     "destination": "Määrämaa",
     "transportTitle": "Kuljetusjärjestely",
@@ -1250,6 +1259,9 @@
       "abvError": "Alkoholipitoisuuden on oltava luku välillä 0–100 (%).",
       "volumeError": "Määrän on oltava luku välillä 0–10 000 (litraa).",
       "priceError": "Hinnan on oltava summa välillä 0–100 000 € ja enintään kahdella desimaalilla.",
+      "nearCap": "Tuoterivejä {count}/{max} — {remaining, plural, one {# paikka} other {# paikkaa}} jäljellä.",
+      "capReached": "Skenaariossa voi olla enintään {max} tuotetta.",
+      "capShareHint": "Valmiin skenaarion voi jakaa linkkinä tulosten yhteydessä.",
       "resetForm": "Tyhjennä lomake"
     },
     "category": {
@@ -1448,7 +1460,12 @@
     "errorTitle": "Luetteloa ei saatu haettua",
     "errorBody": "Taustajärjestelmä ei vastannut. Voit yrittää uudelleen.",
     "emptyTitle": "Ei näytettäviä rivejä",
-    "emptyBody": "Tässä hintaluokassa ei ole yhtään tarjousta, jolle grammahintaa voisi laskea."
+    "emptyBody": "Tässä hintaluokassa ei ole yhtään tarjousta, jolle grammahintaa voisi laskea.",
+    "ageGateCtaTitle": "Ikävahvistus tarvitaan",
+    "ageGateCtaBody": "Tämä hintaluettelo on näkyvissä vain ikävahvistuksen jälkeen.",
+    "ageGateCtaLink": "Siirry ikävahvistukseen",
+    "rateLimitBody": "Palveluun kohdistuu juuri nyt hyvin paljon pyyntöjä. Yritä uudelleen hetken kuluttua.",
+    "staleAsOfLabel": "Andmatiedoilla {date}"
   },
   "SavingsPage": {
     "metaTitle": "Kokonaishinta-ero Alko-viitehintaan",
@@ -1480,7 +1497,9 @@
     "errorTitle": "Luetteloa ei saatu haettua",
     "errorBody": "Taustajärjestelmä ei vastannut. Voit yrittää uudelleen.",
     "emptyTitle": "Ei näytettäviä rivejä",
-    "emptyBody": "Tälle tuoteryhmälle ei ole vielä päivittynyt yhtään riviä, jolla on vertailukelpoinen Alko-viitehinta. Rivit ilmestyvät tänne, kun päivittäinen erä tuottaa niitä."
+    "emptyBody": "Tälle tuoteryhmälle ei ole vielä päivittynyt yhtään riviä, jolla on vertailukelpoinen Alko-viitehinta. Rivit ilmestyvät tänne, kun päivittäinen erä tuottaa niitä.",
+    "noFavourableTitle": "Ei tällä hetkellä kannattavia tuonteja",
+    "noFavourableBody": "Yksikään tämän tuoteryhmän arvioiduista tuotteista ei saa tällä hetkellä arvioitua kokonaishintaa Suomeen, joka jäisi Alko-viitehinnan alle. Luettelossa näkyvät vain tuotteet, joiden arvioitu kokonaishinta on viitehintaa matalampi; tilanne voi muuttua, kun päivittäinen aineisto päivittyy."
   },
   "ContentSafetyBadge": {
     "promotional": "Mainoskieltä havaittu: \"{pattern}\" ({language})",
@@ -1700,6 +1719,7 @@
     "copyLink": "Kopioi linkki",
     "copied": "Kopioitu",
     "expiresAt": "Sessio vanhenee: {date}",
+    "nearExpiry": "Sessio päättyy {date}. Pyydä tarvittaessa tilauksen omistajalta uusi linkki.",
     "joinTitle": "Liity tilaukseen",
     "joinBody": "Valitse lempinimi, jolla lisäät tuotteita tilaukseen. Sessioon tallennetaan vain lempinimi.",
     "nicknameLabel": "Lempinimi",
@@ -1787,7 +1807,7 @@
     "shareLine": "{share} raportoiduista loppusumista on j\u00e4nyt 5 %:n sis\u00e4\u00e4n arviosta.",
     "countLine": "Otoskoko: {count, plural, one {# lopputulos} other {# lopputulosta}}",
     "emptyTitle": "Ei viel\u00e4 k\u00e4ytt\u00e4jien raportoimia lopputuloksia",
-    "emptyBody": "Kun vierailijat raportoivat laskelmansa todellisen loppusumman, t\u00e4h\u00e4n julkaistaan arvion 5 %:n sis\u00e4\u00e4n j\u00e4\u00e4neiden raporttien osuus. Mit\u00e4\u00e4n ei n\u00e4ytet\u00e4 ennen sit\u00e4.",
+    "thresholdBody": "Tarkkuustilasto julkaistaan, kun k\u00e4ytt\u00e4jien raportoimia lopputuloksia on riitt\u00e4v\u00e4sti. Silloin t\u00e4h\u00e4n n\u00e4ytet\u00e4\u00e4n, kuinka suuri osuus raporteista on j\u00e4\u00e4nyt 5 %:n sis\u00e4\u00e4n arviosta.",
     "asOfLine": "Laskettu {date}",
     "loading": "Ladataan tarkkuustilastoa\u2026",
     "loadFailed": "Tarkkuustilasto ei ole juuri nyt saatavilla.",

@@ -1085,3 +1085,64 @@ secret.
 
 - **WHEN** no secret is configured on the worker
 - **THEN** the endpoint answers 503 and revalidates nothing
+
+### Requirement: Tool-limit disclosure
+
+Each enforced tool limit — the 30-item basket, the 10-item comparison, the 20-product scenario, and the 7-day group-order session lifetime — SHALL be disclosed at the point of constraint: a proximity indication before the limit is reached, and an at-limit message explaining the constraint with the applicable alternative affordance (group order for baskets, scenario sharing for scenario products). The disclosure SHALL NOT state a reason the platform does not have.
+
+#### Scenario: Proximity warning before the limit
+
+- **WHEN** the basket holds 25 of its 30 items
+- **THEN** the basket UI shows the remaining capacity before the next add fails
+
+#### Scenario: At-limit message explains and offers an alternative
+
+- **WHEN** the user attempts to exceed an enforced limit
+- **THEN** the UI explains the limit and shows the applicable alternative affordance
+
+### Requirement: Accuracy statistic placeholder honesty
+
+While no user-reported outcomes exist, the methodology accuracy section SHALL render the publication-threshold copy (the statistic is published once a minimum number of outcomes is reported) in place of a loading indicator. The section anchor SHALL remain stable so existing cross-links resolve both before and after the statistic publishes.
+
+#### Scenario: Zero outcomes render threshold copy, not a spinner
+
+- **WHEN** no outcomes are reported
+- **THEN** the accuracy section shows the threshold copy and no indefinite loading indicator
+
+#### Scenario: Anchor preserved across states
+
+- **WHEN** the first outcomes arrive and the statistic renders
+- **THEN** the section keeps the same anchor identifier the placeholder used
+
+### Requirement: Distinguished client-fetch failure states
+
+A client-side listing fetch that fails SHALL map the failure to one of the enumerated classes — age-gate rejection (HTTP 403), rate limited (HTTP 429), timeout (client abort), server error (HTTP 5xx), network failure — and render the class-specific state: age-gate rejection renders the age confirmation affordance, rate limiting renders backoff copy, and the remaining classes render the transient-failure state with retry. A generic backend-unavailable message SHALL NOT be the only rendered failure state on a surface where more than one class can occur (the unit-price ranking, blog listing, and guides listing).
+
+#### Scenario: Age gate rejection is not reported as a backend failure
+
+- **WHEN** a visitor or crawler without age confirmation loads the unit-price ranking and the API answers 403
+- **THEN** the page renders the age confirmation affordance and never renders the backend-unavailable message
+
+#### Scenario: Server error renders transient failure with retry
+
+- **WHEN** the API answers 5xx, or the fetch times out, or the network fails
+- **THEN** the page renders the transient-failure state with a retry affordance
+
+#### Scenario: Rate limiting renders backoff copy
+
+- **WHEN** the API answers 429
+- **THEN** the page renders copy asking the visitor to retry shortly and does not claim a backend failure
+
+### Requirement: Stale-while-error fallback for the unit-price ranking
+
+The unit-price ranking surface SHALL persist its last successful per-category response client-side together with the fetch timestamp. When a subsequent fetch for a category fails, the surface SHALL render the persisted response, visibly labeled with its as-of date, alongside the retry affordance, whenever a persisted response for that category exists. With no persisted response the surface SHALL render the class-distinct failure state. No persisted data SHALL ever render without its as-of label.
+
+#### Scenario: Stale data renders on failure
+
+- **WHEN** a category ranking was previously fetched successfully and a later fetch for that category fails
+- **THEN** the persisted rows render with a visible as-of label and a retry affordance
+
+#### Scenario: No last-good data renders the failure state
+
+- **WHEN** a category fetch fails and no persisted response exists for that category
+- **THEN** the class-distinct failure state renders without fabricated data

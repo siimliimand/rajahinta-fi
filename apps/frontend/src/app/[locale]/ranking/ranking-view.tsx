@@ -127,10 +127,12 @@ export default function RankingView() {
         )}
       </section>
 
-      {/* ── Accuracy section (task 3.3) ──
+      {/* ── Accuracy section (task 3.3; audit-copy-batch task 1.1) ──
           The user-reported accuracy statistic with its sample size and
-          the API-supplied wording; an honest empty state until outcomes
-          exist. Anchor target of the share page's accuracy cross-link. */}
+          the API-supplied wording; while no outcomes exist the section
+          renders the publication-threshold copy instead of a loading
+          state. The `accuracy` id is the share page's cross-link anchor
+          and stays stable across every state (placeholder included). */}
       <div id="accuracy">
         <AccuracyStat variant="section" />
       </div>
