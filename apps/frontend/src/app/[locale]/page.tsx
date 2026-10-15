@@ -14,6 +14,10 @@ import HomeGapHero, {
   type HomeGapHeroState,
   type SavingsTopResponse,
 } from './components/HomeGapHero';
+import NextTaxChangeWidget, {
+  type CalendarNextResponse,
+  deriveNextTaxChangeState,
+} from '@/components/calendar/NextTaxChangeWidget';
 
 /**
  * Canonical status order for the trust-row legend: the same hue ladder the
@@ -226,6 +230,50 @@ function deriveHomeGapHeroState(
   return { kind: 'ready', asOf: read.asOf, rows: read.rows };
 }
 
+// ---------------------------------------------------------------------------
+// Next tax-change widget — server read (tax-change-calendar task 4.2). The
+// next event read, fetched exactly like the two reads above: the fixed
+// first-party prerender token (age-gated endpoint), 900 s revalidation,
+// and degrade-to-null on any failure or unexpected shape — the homepage
+// must never break because the calendar API failed.
+// ---------------------------------------------------------------------------
+
+/**
+ * Server-side read of GET /api/v1/calendar/next for the active locale
+ * (the language selects the disclaimer variant). The response's status,
+ * countdown, and window ride through unchanged; the widget module derives
+ * the render state from them.
+ */
+async function getCalendarNext(
+  locale: string,
+): Promise<CalendarNextResponse | null> {
+  try {
+    const res = await fetch(
+      `${BASE_URL}/api/v1/calendar/next?language=${locale === 'en' ? 'en' : 'fi'}`,
+      {
+        headers: {
+          accept: 'application/json',
+          'x-age-confirmed': SERVER_AGE_CONFIRMATION_TOKEN,
+        },
+        next: { revalidate: 900 },
+      },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as CalendarNextResponse | null;
+    if (
+      body === null ||
+      typeof body !== 'object' ||
+      body.event === null ||
+      typeof body.event !== 'object'
+    ) {
+      return null;
+    }
+    return body;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Homepage (OpenSpec: design-system-foundation, tasks 4.1 + 4.2;
  * trust-and-reach-roadmap task 3.3 extends the trust row;
@@ -256,6 +304,12 @@ function deriveHomeGapHeroState(
  * the card states the pending/unavailable state and does NOT link into
  * the listing; the CTA returns with no code change once references
  * exist. AccuracyStat is a self-contained client island.
+ *
+ * The next-tax-change widget (tax-change-calendar task 4.2) rides the
+ * same honesty contract: CONFIRMED next event with the API's own
+ * day countdown, EXPECTED next event with the simple window label and
+ * the API's rhythm disclaimer and no countdown at all, and no widget
+ * at all when the read fails or the payload violates its contract.
  */
 export default async function HomePage({
   params,
@@ -267,6 +321,8 @@ export default async function HomePage({
 
   const t = await getTranslations('Home');
   const tNav = await getTranslations('Nav');
+  // The next-tax-change widget's own namespace (tax-change-calendar 4.2).
+  const tCalendar = await getTranslations('NextTaxChange');
   // Root-scoped so the status labels resolve through the canonical
   // labelKey contract in RELIABILITY_STATUS_META.
   const tAll = await getTranslations();
@@ -302,6 +358,12 @@ export default async function HomePage({
   // rows → pending, a day older than the freshness cutoff → unavailable.
   const savingsTop = await getSavingsTop();
   const homeGapHeroState = deriveHomeGapHeroState(savingsTop, Date.now());
+
+  // Next tax-change widget state (tax-change-calendar task 4.2). A
+  // failed read or a contract-violating payload degrades to `hidden` —
+  // the widget renders nothing and the page shell stands untouched.
+  const calendarNext = await getCalendarNext(locale);
+  const nextTaxChangeState = deriveNextTaxChangeState(calendarNext, locale);
 
   // The hero form is plain HTML (GET), so it navigates before hydration.
   // The action goes through the localized pathnames (change
@@ -588,6 +650,19 @@ export default async function HomePage({
           </div>
         </div>
       </section>
+
+      {/* ── Next tax-change widget (tax-change-calendar task 4.2) ──────
+          The next upcoming calendar event: CONFIRMED with the API's own
+          day countdown, EXPECTED with the simple window label and the
+          API's rhythm disclaimer (never a countdown — the render branch
+          does not exist). Renders NOTHING when the read failed or the
+          payload violates its contract — the homepage never breaks
+          because the calendar API failed. */}
+      <NextTaxChangeWidget
+        state={nextTaxChangeState}
+        locale={locale}
+        t={tCalendar}
+      />
 
       {/* ── "Why Rajahinta.fi" feature section ───────────────────────── */}
       <section
