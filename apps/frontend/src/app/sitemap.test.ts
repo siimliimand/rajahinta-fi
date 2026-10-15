@@ -30,10 +30,22 @@ type UrlSpace = '' | '/en';
 
 type PathnamesEntry = string | { fi: string; en: string };
 
-/** routing.pathnames as a lookup table (shared segment or fi/en pair). */
-const PATHNAMES = new Map<string, PathnamesEntry>(
-  Object.entries(routing.pathnames),
-);
+/**
+ * The tax-change calendar pair (tax-change-calendar task 4.4): its two
+ * physical folders sit deliberately OUTSIDE routing.pathnames — the
+ * pages hand-write their canonical/hreflang pair (calendar-page design
+ * D6) — so the vocabulary lookup below extends the map by hand with
+ * exactly that pair. Each folder's disk route resolves to the same two
+ * localized variants, mirroring what the pages actually render.
+ */
+const CALENDAR_PAIR: PathnamesEntry = { fi: '/veromuutokset', en: '/tax-changes' };
+
+/** routing.pathnames plus the hand-written calendar pair (see above). */
+const PATHNAMES = new Map<string, PathnamesEntry>([
+  ...Object.entries(routing.pathnames),
+  ['/tax-changes', CALENDAR_PAIR],
+  ['/veromuutokset', CALENDAR_PAIR],
+]);
 
 function localeFor(prefix: UrlSpace): 'fi' | 'en' {
   return prefix === '' ? 'fi' : 'en';
@@ -128,6 +140,20 @@ describe('sitemap static paths (task 3.3)', () => {
     expect(urls).toContain(`${SITE}/en/about`);
     expect(urls).toContain(`${SITE}/en/contact`);
   });
+
+  it('includes the tax-change calendar pair: /veromuutokset (fi) and /en/tax-changes (en variant)', async () => {
+    // The calendar folders sit outside the localized-pathnames
+    // vocabulary, so the sitemap advertises the pair by hand
+    // (tax-change-calendar task 4.4) — this pin keeps it listed.
+    const urls = (await sitemap()).map((entry) => entry.url);
+
+    expect(urls).toContain(`${SITE}/veromuutokset`);
+    expect(urls).toContain(`${SITE}/en/tax-changes`);
+    // The cross-negotiation URLs never appear: each folder redirects
+    // there (one URL per locale — the pages' own canonical rule).
+    expect(urls).not.toContain(`${SITE}/en/veromuutokset`);
+    expect(urls).not.toContain(`${SITE}/tax-changes`);
+  });
 });
 
 /**
@@ -157,8 +183,10 @@ const PUBLIC_STATIC_ROUTES = [
   '/products',
   '/ranking',
   '/savings',
+  '/tax-changes',
   '/trip',
   '/value',
+  '/veromuutokset',
   '/what-if',
 ] as const;
 
@@ -439,6 +467,22 @@ describe('sitemap localized URLs and hreflang alternates (task 2.1)', () => {
     };
     expect(byUrl.get(`${SITE}/tuotteet`)?.alternates?.languages).toEqual(expected);
     expect(byUrl.get(`${SITE}/en/products`)?.alternates?.languages).toEqual(expected);
+  });
+
+  it('pairs the calendar variants with the exact hreflang symmetry the pages render', async () => {
+    // The sitemap's pair must equal the canonical/hreflang metadata the
+    // two calendar pages hand-write (calendar-page design D6) — the
+    // crawler-visible pairing cannot drift from the documents it pairs.
+    const byUrl = new Map(
+      (await sitemap()).map((entry) => [entry.url, entry] as const),
+    );
+    const expected = {
+      'x-default': `${SITE}/veromuutokset`,
+      fi: `${SITE}/veromuutokset`,
+      en: `${SITE}/en/tax-changes`,
+    };
+    expect(byUrl.get(`${SITE}/veromuutokset`)?.alternates?.languages).toEqual(expected);
+    expect(byUrl.get(`${SITE}/en/tax-changes`)?.alternates?.languages).toEqual(expected);
   });
 
   it('every alternates map is honest: targets emitted, self-reference included, x-default the bare fi URL', async () => {

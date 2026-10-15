@@ -241,6 +241,30 @@ describe('CalendarTimeline — 2026 seeded set (fi)', () => {
     );
   });
 
+  it('renders the full 2026 seeded set in deterministic period order across every group', async () => {
+    // Task 4.4, spec R4: the intra-group pair above pins one tiebreak;
+    // this pins the WHOLE seeded timeline — groups in period order
+    // (August's confirmed date renders before the September window even
+    // though the fixture lists the window first), the API order kept
+    // inside each group, and every card in its correct month/window
+    // group. The flat rendered sequence is therefore fully determined.
+    mockRequest.mockResolvedValue(eventsResponse(SEEDED_2026));
+    renderWithCatalog(<CalendarTimeline year={2026} />, 'fi');
+
+    const timeline = await screen.findByTestId('calendar-timeline');
+    const titles = within(timeline)
+      .getAllByTestId('calendar-event-card')
+      .map((card) => card.querySelector('h4')?.textContent);
+    expect(titles).toEqual([
+      'Viinien ja siiderien valmistevero nousi 1.1.2026',
+      'Viron alkoholivalmistevero nousi 10 % 1.1.2026',
+      'Alkon kevään jaksovaihto (odotettu maaliskuun lopussa)',
+      'Verohallinto vahvisti vuoden 2027 alkoholiverot 6.8.2026',
+      'Alkon syksyn jaksovaihto (odotettu syyskuun lopussa)',
+      'Vuoden 2027 verotaulukon lainsäädäntö odottaa eduskuntakäsittelyä',
+    ]);
+  });
+
   it('renders the honest empty state for a year without events', async () => {
     mockRequest.mockResolvedValue(eventsResponse([]));
     renderWithCatalog(<CalendarTimeline year={2027} />, 'fi');
