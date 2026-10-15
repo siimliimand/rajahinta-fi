@@ -65,3 +65,41 @@ The reliability aggregation SHALL pick up operator-verified offers through its o
 
 - **WHEN** an aged VERIFIED offer degrades to STALE
 - **THEN** the offer's `verified_at`/`verified_by` pair still records who verified it and when, and its price and observation timestamp are unchanged
+
+### Requirement: Materialized per-request reliability reads
+
+The system SHALL serve per-request merchant reliability aggregates (the product-detail embed and any bounded merchant-set read) from the tick-materialized `merchant_reliability_aggregates` table — one row per merchant, refreshed by the 30-minute aggregation cron after the verified-ageing pass — and the per-request read cost SHALL be independent of catalog size and history depth. The whole-catalog listing path MAY read the same table. A per-request reliability read SHALL NOT scan `retail_offers`.
+
+#### Scenario: Figures identical to the live aggregate
+
+- **WHEN** the materialized aggregates are refreshed for a tick
+- **THEN** each merchant row holds exactly the figures the live current-offer aggregate yields for that merchant (offer count, per-status counts, freshest observed_at) under the same deterministic-latest rule
+
+#### Scenario: Merchant-set read is bounded by the table
+
+- **WHEN** a consumer requests aggregates for a set of merchants
+- **THEN** the read touches only those merchants' materialized rows and returns them in the deterministic merchant-ascending order
+
+#### Scenario: Staleness bounded by one tick
+
+- **WHEN** the aggregation tick completes
+- **THEN** the materialized rows reflect the tick's offer statuses (including VERIFIED→STALE ageing), and no consumer sees aggregates older than one tick
+
+#### Scenario: Cold start fails open
+
+- **WHEN** the materialized table has no row for a requested merchant (pre-first-tick, or a merchant with no current offers)
+- **THEN** the merchant is simply absent from the result and the embed degrades to omitting the badge — the system SHALL NOT fall back to a per-request whole-catalog scan
+
+### Requirement: Index-bounded verified-ageing sweep
+
+The periodic VERIFIED→STALE ageing sweep over `retail_offers` SHALL be served by the composite index `(reliability_status, observed_at)` such that its per-tick read cost scales with the offers that actually aged since the previous tick, not with catalog size or observation-history depth. The query plan SHALL use a `SEARCH` on that index (asserted by test), and a full table scan SHALL be treated as a regression.
+
+#### Scenario: Sweep plan is index-bounded
+
+- **WHEN** the ageing sweep statement is explained against migrated schema
+- **THEN** the plan searches `retail_offers_reliability_status_observed_at_idx` rather than scanning the table
+
+#### Scenario: Cost independent of history depth
+
+- **WHEN** the observation history grows while the set of newly-aged VERIFIED offers stays small
+- **THEN** the sweep's per-tick rows read stays proportional to the newly-aged set, not to total rows
