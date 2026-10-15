@@ -2049,5 +2049,41 @@
     "frozenNote": "The link opens a frozen copy of the calculation — later changes do not alter it.",
     "authRequired": "Sharing requires signing in.",
     "failed": "Creating the share link failed. Please try again."
+  },
+  "NextTaxChange": {
+    "heading": "Next tax change",
+    "inDays": "{days, plural, one {in # day} other {in # days}}",
+    "today": "Today",
+    "linkLabel": "See tax changes"
+  },
+  "TaxChangeCalendarPage": {
+    "metaTitle": "Tax changes and the annual price-change rhythm",
+    "metaDescription": "A sourced calendar of alcohol tax changes and of the annual rhythm of Alko price-list switches and Estonian excise steps.",
+    "title": "Tax changes",
+    "subtitle": "Confirmed tax changes and the recurring price-change rhythm — every entry with its official source.",
+    "rhythmIntro": "Price-affecting tax changes follow the same rhythm every year: Finnish excise rates usually change at the turn of the year, and the Finnish Tax Administration publishes the next year’s rates in advance. Alko switches its retail prices twice a year, normally at the end of March and September. In Estonia, alcohol excise rises in legislated steps at the turn of the year. The timeline separates confirmed dates, each with its official source, from entries based on the recurring annual rhythm.",
+    "timelineHeading": "Year {year}",
+    "yearNavLabel": "Switch year",
+    "prevYearLink": "← {year}",
+    "nextYearLink": "{year} →",
+    "groupConfirmed": "{period}",
+    "groupExpected": "Expected {period}",
+    "badgeConfirmed": "Confirmed",
+    "badgeExpected": "Annual rhythm",
+    "eventDateLabel": "Effective date: {date}",
+    "sourceLink": "Official source",
+    "loading": "Loading tax changes…",
+    "emptyTitle": "No entries for {year}",
+    "emptyBody": "No entries have been added for {year} yet.",
+    "ageGateCtaTitle": "Age confirmation required",
+    "ageGateCtaBody": "Confirm your age to see the tax-change calendar.",
+    "ageGateCtaLink": "Go to age confirmation",
+    "errorTitle": "Could not fetch the listing",
+    "errorBody": "The backend did not respond. You can try again.",
+    "rateLimitBody": "The service is receiving a very large number of requests right now. Please retry in a moment.",
+    "crossLinksHeading": "What would a tax change do to your basket?",
+    "crossLinksBody": "The scenario calculator recalculates an example basket under a rate you choose, and the blog covers tax changes that have entered into force.",
+    "whatIfLink": "Open the scenario calculator",
+    "blogLink": "Read the tax-change blog"
   }
 }

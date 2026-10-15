@@ -2049,5 +2049,41 @@
     "frozenNote": "Linkki avaa jäädytetyn kopion laskelmasta — myöhemmät muutokset eivät sitä muuta.",
     "authRequired": "Jakaminen vaatii kirjautumisen.",
     "failed": "Jakolinkin luominen epäonnistui. Yritä uudelleen."
+  },
+  "NextTaxChange": {
+    "heading": "Seuraava veromuutos",
+    "inDays": "{days} päivän kuluttua",
+    "today": "Tänään",
+    "linkLabel": "Katso veromuutokset"
+  },
+  "TaxChangeCalendarPage": {
+    "metaTitle": "Veromuutokset ja hintamuutosten vuosirytmi",
+    "metaDescription": "Lähteellinen kalenteri alkoholin veromuutoksista sekä Alkon hintaluetteloiden ja Viron veronousujen vuosirytmistä.",
+    "title": "Veromuutokset",
+    "subtitle": "Vahvistetut veromuutokset ja toistuva hintamuutosrytmi — kukin merkintä virallisen lähteen kanssa.",
+    "rhythmIntro": "Hintoihin vaikuttavat veromuutokset toistuvat vuosittain saman rytmin mukaan: Suomen valmisteverot muuttuvat yleensä vuodenvaihteessa, ja Verohallinto julkaisee seuraavan vuoden verotasot etukäteen. Alkon vähittäismyyntihinnat vaihtuvat kaksi kertaa vuodessa, normaalisti maalis- ja syyskuun lopussa. Virossa alkoholivalmistevero nousee lain mukaan porrastetusti vuodenvaihteessa. Aikajana erottaa vahvistetut ajankohdat virallisine lähteineen toistuvaan vuosirytmiin perustuvista merkinnöistä.",
+    "timelineHeading": "Vuosi {year}",
+    "yearNavLabel": "Vaihda vuotta",
+    "prevYearLink": "← {year}",
+    "nextYearLink": "{year} →",
+    "groupConfirmed": "{period}",
+    "groupExpected": "{period} (odotettu)",
+    "badgeConfirmed": "Vahvistettu",
+    "badgeExpected": "Vuosirytmi",
+    "eventDateLabel": "Voimaantulopäivä: {date}",
+    "sourceLink": "Virallinen lähde",
+    "loading": "Ladataan veromuutoksia…",
+    "emptyTitle": "Ei merkintöjä vuodelle {year}",
+    "emptyBody": "Vuodelle {year} ei ole lisätty yhtään merkintää.",
+    "ageGateCtaTitle": "Ikävahvistus tarvitaan",
+    "ageGateCtaBody": "Vahvista ikäsi nähdäksesi veromuutoskalenterin.",
+    "ageGateCtaLink": "Siirry ikävahvistukseen",
+    "errorTitle": "Luetteloa ei saatu haettua",
+    "errorBody": "Taustajärjestelmä ei vastannut. Voit yrittää uudelleen.",
+    "rateLimitBody": "Palveluun kohdistuu juuri nyt hyvin paljon pyyntöjä. Yritä uudelleen hetken kuluttua.",
+    "crossLinksHeading": "Miten veromuutos vaikuttaa koriisi?",
+    "crossLinksBody": "Skenaariolaskurilla voi laskea verotason muutoksen vaikutuksen esimerkkikorin kokonaiskustannukseen, ja blogissa käydään läpi voimaan astuneita veromuutoksia.",
+    "whatIfLink": "Avaa skenaariolaskuri",
+    "blogLink": "Lue veromuutosblogia"
   }
 }
