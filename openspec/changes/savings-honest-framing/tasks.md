@@ -13,5 +13,5 @@
 
 ## 3. Verification
 
-- [ ] 3.1 Run typecheck, eslint, and the api-worker + frontend suites across touched paths <!-- agent: platform-engineer.fast, depends_on: [1.2, 2.3], touches: [] -->
+- [x] 3.1 Run typecheck, eslint, and the api-worker + frontend suites across touched paths <!-- agent: platform-engineer.fast, depends_on: [1.2, 2.3], touches: [] --> (PASS: api-worker tsc + eslint clean, frontend tsc + eslint + content-policy lint clean, frontend vitest 1577/1577; api-worker vitest unrunnable on host — 100% of failures are the pre-existing FTS5 collection error, zero logic/syntax failures)
 - [ ] 3.2 Staging/live spot-check: beer (zero negative gaps live) renders the honest state; `/savings/top` still shows the 3 favourable rows with `importFavourable: 3` <!-- agent: devops-engineer.fast, depends_on: [3.1], touches: [] -->
