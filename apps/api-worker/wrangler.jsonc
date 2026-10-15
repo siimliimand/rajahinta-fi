@@ -388,21 +388,23 @@
       // instances via queue → consumer handoff. Instances are created only
       // through the Workflows REST API:
       //   POST /accounts/{account}/workflows/rajahinta-price-ingestion-staging/instances
-      // All non-ingestion cadences keep the shared top-level schedule:
-      //   */30 aggregation + freshness alert · 0 */6 transport refresh +
-      //   click flush · 0 2 tax review · 30 3 retention sweep · 0 5 1
-      //   fransberg refresh · 0 6 * * 1 preference digest (task 4.2 —
-      //   the var gate, not the trigger set, keeps it off).
+      //
+      // Cron override (2026-10-14, ops request): ALL staging cron triggers
+      // stopped — the empty array REPLACES the top-level set, so no
+      // scheduled handler fires in staging (aggregation, freshness alert,
+      // transport refresh, click flush, tax review, retention sweep,
+      // fransberg refresh, preference digest). Staging ingestion was
+      // already manual-only (above); re-enable by restoring the
+      // pre-stop array and running `wrangler triggers deploy --env staging`:
+      //   */30 * * * *  aggregation + freshness alert
+      //   0 */6 * * *   transport refresh + click flush
+      //   0 2 * * *     tax review
+      //   30 3 * * *    retention sweep
+      //   0 5 1 * *     fransberg refresh (monthly)
+      //   0 6 * * 1     preference digest (also var-gated)
       // Production keeps the full top-level array.
       "triggers": {
-        "crons": [
-          "*/30 * * * *",
-          "0 */6 * * *",
-          "0 2 * * *",
-          "30 3 * * *",
-          "0 5 1 * *",
-          "0 6 * * 1"
-        ]
+        "crons": []
       },
       "queues": {
         "producers": [

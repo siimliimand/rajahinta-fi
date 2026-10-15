@@ -414,3 +414,78 @@ export function listQuarantinedNames(
     '/ops/console/name-quality/quarantined',
   );
 }
+
+// ---------------------------------------------------------------------------
+// Calendar events (task 5.1, change tax-change-calendar) — the audited
+// maintenance path over the sourced price-change rhythm: list, create,
+// update. Deliberately NO delete client — the endpoint does not exist.
+// Response types are local to the console API module.
+// ---------------------------------------------------------------------------
+
+/** One calendar event in the console view — the full sourced row. */
+export interface OpsCalendarEventItem {
+  id: number;
+  year: number;
+  eventType: string;
+  status: string;
+  occurrenceDate: string | null;
+  expectedWindow: string | null;
+  titleFi: string;
+  titleEn: string;
+  summaryFi: string;
+  summaryEn: string;
+  sourceUrl: string;
+}
+
+export interface OpsCalendarEventsResponse {
+  items: OpsCalendarEventItem[];
+  total: number;
+}
+
+/** The console's event content — full row, re-validated server-side by
+ * the persistence-boundary validator (status/precision split included). */
+export interface OpsCalendarEventInput {
+  operator: string;
+  year: number;
+  eventType: string;
+  status: 'CONFIRMED' | 'EXPECTED';
+  occurrenceDate: string | null;
+  expectedWindow: string | null;
+  titleFi: string;
+  titleEn: string;
+  summaryFi: string;
+  summaryEn: string;
+  sourceUrl: string;
+  note?: string;
+}
+
+export function listCalendarEvents(
+  token: string,
+): Promise<OpsCalendarEventsResponse> {
+  return opsFetch<OpsCalendarEventsResponse>(
+    token,
+    '/ops/console/calendar-events',
+  );
+}
+
+export function createCalendarEvent(
+  token: string,
+  body: OpsCalendarEventInput,
+): Promise<OpsCalendarEventItem> {
+  return opsFetch<OpsCalendarEventItem>(token, '/ops/console/calendar-events', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateCalendarEvent(
+  token: string,
+  id: number,
+  body: OpsCalendarEventInput,
+): Promise<OpsCalendarEventItem> {
+  return opsFetch<OpsCalendarEventItem>(
+    token,
+    `/ops/console/calendar-events/${id}`,
+    { method: 'POST', body: JSON.stringify(body) },
+  );
+}

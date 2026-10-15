@@ -118,6 +118,13 @@ import {
 import { createLogger } from '../logger';
 import { passesContentPolicy } from '../../../../packages/core-domain/src/content/content-lint';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
+import {
+  validateCalendarEvent,
+  type CalendarEventInput,
+  type ValidatedCalendarEvent,
+} from '../../../../packages/data-platform/src/repositories/calendar-event-validator';
+import { DrizzleCalendarEventRepository } from '../../../../packages/data-platform/src/repositories/calendar-event.repository';
+import { calendarEventBody } from './calendar.routes';
 
 // ---------------------------------------------------------------------------
 // Shared validation (imperative-operator checks, controller parity)
@@ -2660,6 +2667,247 @@ async function verifyOffer(c: Context<AppEnv>): Promise<Response> {
 }
 
 // ---------------------------------------------------------------------------
+// Calendar events — the audited tax-change-calendar maintenance path
+// (task 5.1, change tax-change-calendar; spec "Audited ops maintenance
+// path")
+// ---------------------------------------------------------------------------
+
+/**
+ * List / create / update the sourced price-change rhythm rows so a new
+ * year's events land without a code change. Deliberately NO delete: a
+ * public calendar row never dangles mid-year (design), so the public
+ * endpoints only ever serve events.
+ *
+ * Content validation has ONE home — the persistence-boundary
+ * `validateCalendarEvent` (the same contract the task-1.3 seed and the
+ * task-3.1 repository writes already run through): closed vocabularies,
+ * the status/precision split (CONFIRMED carries occurrence_date and
+ * forbids a window; EXPECTED the reverse), real-calendar dates, http(s)
+ * source, FI+EN text. Its rejections carry messages naming the valid
+ * values and map to the console's 400 ValidationError envelope —
+ * contract-level errors, never silent coercion. An EXPECTED → CONFIRMED
+ * transition is therefore exactly "send status CONFIRMED +
+ * occurrence_date (and no window)": the validator clears/forbids the
+ * window by construction.
+ *
+ * Updates are FULL-CONTENT (every field required, re-validated as a
+ * whole): the status/precision coupling makes partial status edits
+ * ambiguous, so the console form always submits the complete row.
+ *
+ * Every create/update appends a `calendar_event` audit row (operator
+ * identity, before/after, note) through the same WorkerAuditService as
+ * every console mutation. Creation time for the listing lives in that
+ * audit trail, not duplicated into the response rows.
+ *
+ * Listing order: year ascending, then the deterministic in-year order
+ * the repository's pure-module sort applies (period start, CONFIRMED
+ * before EXPECTED, then type, then id) — year reads go through the same
+ * DrizzleCalendarEventRepository the public API uses, so the console can
+ * never disagree with the public listing about a row's order.
+ */
+
+/** Map the request body onto the validator's input shape. The validator
+ * re-checks every field's type at runtime (undefined fails loudly with
+ * the column named), so the console never pre-coerces. */
+function calendarEventInputFromDto(
+  dto: Record<string, unknown>,
+): CalendarEventInput {
+  return {
+    year: dto.year as number,
+    eventType: dto.eventType as string,
+    status: dto.status as string,
+    occurrenceDate: (dto.occurrenceDate ?? null) as string | null,
+    expectedWindow: (dto.expectedWindow ?? null) as string | null,
+    titleFi: dto.titleFi as string,
+    titleEn: dto.titleEn as string,
+    summaryFi: dto.summaryFi as string,
+    summaryEn: dto.summaryEn as string,
+    sourceUrl: dto.sourceUrl as string,
+  };
+}
+
+/** Run the body through the persistence-boundary validator, mapping its
+ * contract-level Error onto the console's 400 ValidationError envelope. */
+function validateConsoleCalendarEvent(
+  dto: Record<string, unknown>,
+): ValidatedCalendarEvent {
+  try {
+    return validateCalendarEvent(calendarEventInputFromDto(dto));
+  } catch (err) {
+    if (err instanceof Error && !(err instanceof ApiHttpError)) {
+      throw new ApiHttpError(400, {
+        statusCode: 400,
+        message: err.message,
+        error: 'ValidationError',
+      });
+    }
+    throw err;
+  }
+}
+
+/** The audit trail's before/after value — the full sourced row content. */
+function calendarEventAuditValue(event: ValidatedCalendarEvent): Record<
+  string,
+  unknown
+> {
+  return {
+    year: event.year,
+    eventType: event.eventType,
+    status: event.status,
+    occurrenceDate: event.occurrenceDate,
+    expectedWindow: event.expectedWindow,
+    titleFi: event.titleFi,
+    titleEn: event.titleEn,
+    summaryFi: event.summaryFi,
+    summaryEn: event.summaryEn,
+    sourceUrl: event.sourceUrl,
+  };
+}
+
+async function listCalendarEvents(c: Context<AppEnv>): Promise<Response> {
+  const repo = new DrizzleCalendarEventRepository(c.env.DB);
+  // Distinct years first (one indexed column, ascending), then the port's
+  // per-year deterministic reads — no cross-year ordering is re-invented
+  // here, and empty years simply contribute nothing.
+  const years = await c.env.DB.prepare(
+    'SELECT DISTINCT year FROM calendar_events ORDER BY year ASC',
+  ).all<{ year: number }>();
+  const events = [];
+  for (const row of years.results) {
+    events.push(...(await repo.listByYear(row.year)));
+  }
+  return c.json({
+    items: events.map(calendarEventBody),
+    total: events.length,
+  });
+}
+
+async function createCalendarEvent(c: Context<AppEnv>): Promise<Response> {
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const validated = validateConsoleCalendarEvent(dto);
+
+  // Autoassigned id beyond every existing row (the seed's documented
+  // contract: ops-created rows live outside the seed's id range and are
+  // never touched by re-seeding). Single-operator console — no allocation
+  // race to defend against.
+  const head = await c.env.DB.prepare(
+    'SELECT MAX(id) AS max_id FROM calendar_events',
+  ).first<{ max_id: number | null }>();
+  const id = (head?.max_id ?? 0) + 1;
+
+  await c.env.DB.prepare(
+    'INSERT INTO calendar_events ' +
+      '(id, year, event_type, status, occurrence_date, expected_window, ' +
+      'title_fi, title_en, summary_fi, summary_en, source_url) ' +
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  )
+    .bind(
+      id,
+      validated.year,
+      validated.eventType,
+      validated.status,
+      validated.occurrenceDate,
+      validated.expectedWindow,
+      validated.titleFi,
+      validated.titleEn,
+      validated.summaryFi,
+      validated.summaryEn,
+      validated.sourceUrl,
+    )
+    .run();
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'calendar_event',
+    entityId: String(id),
+    action: 'created',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Calendar event created via operator console',
+    newValue: calendarEventAuditValue(validated),
+  });
+
+  return c.json({ id, ...calendarEventAuditValue(validated) });
+}
+
+async function updateCalendarEvent(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const validated = validateConsoleCalendarEvent(dto);
+
+  const existing = await c.env.DB.prepare(
+    'SELECT year, event_type, status, occurrence_date, expected_window, ' +
+      'title_fi, title_en, summary_fi, summary_en, source_url ' +
+      'FROM calendar_events WHERE id = ?',
+  )
+    .bind(id)
+    .first<{
+      year: number;
+      event_type: string;
+      status: string;
+      occurrence_date: string | null;
+      expected_window: string | null;
+      title_fi: string;
+      title_en: string;
+      summary_fi: string;
+      summary_en: string;
+      source_url: string;
+    }>();
+  if (existing === null) {
+    throw new ApiHttpError(404, `Calendar event ${id} not found`);
+  }
+
+  // In-place edit of the same row — no delete, no re-create: the row's
+  // id (and any public reference to it) survives status transitions.
+  await c.env.DB.prepare(
+    'UPDATE calendar_events SET year = ?, event_type = ?, status = ?, ' +
+      'occurrence_date = ?, expected_window = ?, title_fi = ?, title_en = ?, ' +
+      'summary_fi = ?, summary_en = ?, source_url = ? WHERE id = ?',
+  )
+    .bind(
+      validated.year,
+      validated.eventType,
+      validated.status,
+      validated.occurrenceDate,
+      validated.expectedWindow,
+      validated.titleFi,
+      validated.titleEn,
+      validated.summaryFi,
+      validated.summaryEn,
+      validated.sourceUrl,
+      id,
+    )
+    .run();
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'calendar_event',
+    entityId: String(id),
+    action: 'updated',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Calendar event updated via operator console',
+    previousValue: {
+      year: existing.year,
+      eventType: existing.event_type,
+      status: existing.status,
+      occurrenceDate: existing.occurrence_date,
+      expectedWindow: existing.expected_window,
+      titleFi: existing.title_fi,
+      titleEn: existing.title_en,
+      summaryFi: existing.summary_fi,
+      summaryEn: existing.summary_en,
+      sourceUrl: existing.source_url,
+    },
+    newValue: calendarEventAuditValue(validated),
+  });
+
+  return c.json({ id, ...calendarEventAuditValue(validated) });
+}
+
+// ---------------------------------------------------------------------------
 // Name-quality quarantine queue — the enrichment listing (task 3.1,
 // change product-name-quality-gate; spec product-normalization).
 // ---------------------------------------------------------------------------
@@ -2848,6 +3096,15 @@ export function registerOpsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   // the owner-gated human write path for VERIFIED: attributed, audited,
   // re-verifiable; deliberately no un-verify.
   app.post('/ops/console/offers/:id/verify', verifyOffer);
+
+  // Calendar events (task 5.1, tax-change-calendar) — the audited
+  // maintenance path over the sourced price-change rhythm: list, create,
+  // update (full-content, validated by the persistence-boundary contract
+  // the seed and repository share). Deliberately NO delete — a public
+  // calendar row never dangles mid-year.
+  app.get('/ops/console/calendar-events', listCalendarEvents);
+  app.post('/ops/console/calendar-events', createCalendarEvent);
+  app.post('/ops/console/calendar-events/:id', updateCalendarEvent);
 
   // Name-quality quarantine queue (task 3.1, product-name-quality-gate)
   // — the read-only enrichment listing; rides the /ops/console/* guard

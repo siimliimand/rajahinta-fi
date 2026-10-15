@@ -410,6 +410,11 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   // Calculator — CALCULATOR prefix at index.ts, ageGate prefix in guards.
   ['/api/v1/calculator', ['POST'], 'CALCULATOR + ageGate'],
   ['/api/v1/calculator/result/:recordId', ['GET'], 'CALCULATOR + ageGate'],
+  // Tax-change calendar public reads (tax-change-calendar 3.2) — the
+  // allowances chain: route-local DEFAULT + ageGate over the sourced
+  // calendar (deterministic reference reads).
+  ['/api/v1/calendar/events', ['GET'], 'DEFAULT + ageGate'],
+  ['/api/v1/calendar/next', ['GET'], 'DEFAULT + ageGate'],
   // Contact intake (first-impression-pass 3.2) — route-local CONTACT
   // rate limit (5/10 min/IP), anonymous by design; no guard.
   ['/api/v1/contact', ['POST'], 'CONTACT'],
@@ -490,6 +495,10 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/ops/console/blog/guides/:id', ['POST'], 'opsAccess'],
   ['/ops/console/blog/posts', ['GET'], 'opsAccess'],
   ['/ops/console/blog/posts/:id/publish', ['POST'], 'opsAccess'],
+  // Calendar events (tax-change-calendar 5.1) — the audited maintenance
+  // path (list/create/update; deliberately no delete).
+  ['/ops/console/calendar-events', ['GET', 'POST'], 'opsAccess'],
+  ['/ops/console/calendar-events/:id', ['POST'], 'opsAccess'],
   ['/ops/console/confirmations', ['GET'], 'opsAccess'],
   ['/ops/console/confirmations/consumption-norms/:id/confirm', ['POST'], 'opsAccess'],
   ['/ops/console/confirmations/tax/:id/approve', ['POST'], 'opsAccess'],
