@@ -10,7 +10,7 @@
 - [x] 2.1 `ValueRanking` renders the three failure classes distinctly: age-gate → age confirmation CTA linking `/age-gate`; rate-limited → backoff copy; timeout/server/network → the existing transient ErrorState with retry <!-- agent: platform-engineer.build, depends_on: [1.1], touches: [apps/frontend/src/app/[locale]/value/components/ValueRanking.tsx] -->
 - [x] 2.2 Stale-while-error: persist the last successful per-category response (localStorage, value + fetchedAt); on failure render it with an as-of label alongside retry; absent cache render the class-distinct failure state <!-- agent: platform-engineer.build, depends_on: [1.1], touches: [apps/frontend/src/app/[locale]/value/components/ValueRanking.tsx] -->
 - [x] 2.3 i18n keys (fi/en): age-gate CTA, rate-limit copy, stale as-of label <!-- agent: platform-engineer.fast, depends_on: [2.1, 2.2], touches: [apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] --> (absorbed into the 2.1/2.2 worker — keys landed with the component change)
-- [ ] 2.4 Component tests: each failure class renders its distinct state; stale fallback renders cached data with the as-of label; no-cache renders the failure state; the success path is byte-unchanged <!-- agent: platform-engineer.build, depends_on: [2.1, 2.2, 2.3], touches: [apps/frontend/src/app/[locale]/value/components/ValueRanking.test.tsx] -->
+- [x] 2.4 Component tests: each failure class renders its distinct state; stale fallback renders cached data with the as-of label; no-cache renders the failure state; the success path is byte-unchanged <!-- agent: platform-engineer.build, depends_on: [2.1, 2.2, 2.3], touches: [apps/frontend/src/app/[locale]/value/components/ValueRanking.test.tsx] -->
 
 ## 3. Alert rule
 
