@@ -9,7 +9,7 @@
 
 - [x] 2.1 Zero-negative state on `/savings`: explicit "ei tällä hetkellä kannattavia tuonteja" state with as-of date + coverage counts; ordering statement stays; positive-gap rows never render as savings rows <!-- agent: platform-engineer.build, depends_on: [1.1], touches: [apps/frontend/src/app/[locale]/savings/page.tsx, apps/frontend/src/app/[locale]/savings/components/] --> (109338f; zero state keeps the coverage header + as-of visible above the EmptyState; defensive `gapCents < 0` client filter drives both branches)
 - [x] 2.2 i18n keys (fi/en) for the no-favourable-imports state <!-- agent: platform-engineer.fast, depends_on: [2.1], touches: [apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] --> (absorbed into the 2.1 worker — SavingsPage.noFavourableTitle/noFavourableBody landed with the component change; old emptyTitle/emptyBody keys left unreferenced in the catalogs)
-- [ ] 2.3 Component tests: zero-negative category renders the honest state; a category with negative-gap rows renders rows as before; compliance isolation assertions untouched <!-- agent: platform-engineer.build, depends_on: [2.1, 2.2], touches: [apps/frontend/src/app/[locale]/savings/savings-page.test.tsx] -->
+- [x] 2.3 Component tests: zero-negative category renders the honest state; a category with negative-gap rows renders rows as before; compliance isolation assertions untouched <!-- agent: platform-engineer.build, depends_on: [2.1, 2.2], touches: [apps/frontend/src/app/[locale]/savings/savings-page.test.tsx] --> (f3975dd, committed by the task worker; 3 old pins repinned to the honest contract with corrected fixtures, +1 defensive-filter test; compliance/metadata tests unmodified; suite 1577/1577, tsc + eslint clean)
 
 ## 3. Verification
 
