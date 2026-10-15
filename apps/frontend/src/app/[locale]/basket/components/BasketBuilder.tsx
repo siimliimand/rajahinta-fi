@@ -97,6 +97,14 @@ const TRANSPORT_VALUES: readonly TransportArrangement[] = [
   'PERSONAL',
 ];
 
+/**
+ * Free slots at which the remaining-capacity hint starts (audit-copy-batch
+ * task 2.1, spec web-application "Tool-limit disclosure"): with five or
+ * fewer slots left — 25 of 30 items — the builder names the remaining
+ * capacity before the next add fails.
+ */
+const CAP_PROXIMITY_SLOTS = 5;
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -200,6 +208,13 @@ export default function BasketBuilder({
   const atCapacity = items.length >= maxItems;
 
   /**
+   * Proximity window (audit-copy-batch task 2.1): five or fewer free
+   * slots (25/30 … 29/30) — the remaining capacity renders before the
+   * next add fails; at the cap the at-limit message takes over.
+   */
+  const nearCap = !atCapacity && items.length >= maxItems - CAP_PROXIMITY_SLOTS;
+
+  /**
    * One-click example-basket fill (task 3.3): adds every listed row
    * through the same `onAddItem` path a search selection uses, up to the
    * remaining capacity. The basket never fills itself — this runs only
@@ -224,9 +239,30 @@ export default function BasketBuilder({
         </h2>
 
         {atCapacity ? (
-          <p className="text-sm text-amber-700">
-            {t('basketFull', { max: maxItems })}
-          </p>
+          <div>
+            <p className="text-sm text-amber-700">
+              {t('basketFull', { max: maxItems })}
+            </p>
+            {/* At-limit disclosure (audit-copy-batch task 2.1, spec
+                web-application "Tool-limit disclosure"): the reason the
+                cap exists, and the alternative affordance for larger
+                joint orders — the group order. */}
+            <p className="mt-2 text-xs leading-relaxed text-gray-600">
+              {t('capReason', { max: maxItems })}
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-gray-700">
+              {t.rich('capGroupOrder', {
+                link: (chunks) => (
+                  <Link
+                    href="/group-order"
+                    className="font-medium text-primary-600 underline hover:text-primary-800"
+                  >
+                    {chunks}
+                  </Link>
+                ),
+              })}
+            </p>
+          </div>
         ) : (
           <>
             {/* Search input */}
@@ -423,6 +459,23 @@ export default function BasketBuilder({
           </div>
         ) : (
           <>
+            {/* Remaining-capacity hint (audit-copy-batch task 2.1): from
+                25 of 30 items the free slots are named before the next
+                add fails. The literal used/cap counter above keeps its
+                exact `count/max` shape. */}
+            {nearCap && (
+              <p
+                data-testid="basket-cap-proximity"
+                className="mb-3 text-xs text-amber-700"
+              >
+                {t('nearCap', {
+                  count: items.length,
+                  max: maxItems,
+                  remaining: maxItems - items.length,
+                })}
+              </p>
+            )}
+
             {/* Item cap warning */}
             {atCapacity && (
               <p className="mb-3 text-xs text-amber-600">
