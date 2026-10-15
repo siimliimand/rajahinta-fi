@@ -1,0 +1,20 @@
+# Tasks
+
+## 1. Accuracy framing
+
+- [x] 1.1 Ranking methodology accuracy section: when zero outcomes exist render the publication-threshold copy instead of the perpetual loading state; keep the `#accuracy` anchor stable; fi/en copy <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/frontend/src/app/[locale]/ranking/ranking-view.tsx, apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] --> (4a6bc89; render site is the shared AccuracyStat.tsx section variant — anchor div byte-identical; threshold copy non-numeric on purpose: global statistic endpoint has no floor, stating one would fabricate a reason)
+
+## 2. Limit disclosure
+
+- [x] 2.1 Basket proximity + at-limit messaging for the 30-item cap (remaining-capacity hint, at-limit explanation with the group-order affordance) <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/frontend/src/app/[locale]/basket/basket-view.tsx, apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] --> (4a6bc89; render site is BasketBuilder.tsx; proximity hint at 25–29/30, at-limit shows cap reason + /group-order link; existing counter/full-copy pins untouched)
+- [x] 2.2 Limit disclosure copy for compare (10), what-if scenario products (20), and the group-order 7-day session lifetime (shown at creation and near expiry) <!-- agent: platform-engineer.fast, depends_on: [], touches: [apps/frontend/src/app/[locale]/compare/components/BasketComparisonSection.tsx, apps/frontend/src/app/[locale]/what-if/components/, apps/frontend/src/app/[locale]/what-if/scenario-draft.ts, apps/frontend/src/app/[locale]/group-order/create-view.tsx, apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] --> (cc02df4; compare proximity from 8/10 reusing BasketCommon keys, at-limit upgraded with cap reason + group-order link; what-if proximity from 16/20, at-limit names the share-link alternative — no cap reason stated since none is documented; group-order creation-time 7-day disclosure already existed, near-expiry added on session-view from the payload's server-set expiresAt over the last 24h, no client countdown)
+
+## 3. Authority links + example path
+
+- [x] 3.1 Contextual authority links (vero.fi alkoholiverolaskuri, Tulli reisija guidance) near the calculator result totals, reusing the DeclarationGuidancePanel link set <!-- agent: platform-engineer.fast, depends_on: [], touches: [apps/frontend/src/app/[locale]/calculator/components/, apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] --> (cc02df4 — DEVIATION, partially met: the panel's link set is API-driven OFFICIAL_SOURCES and contains only two vero.fi links (alcohol excise guidance, excise duties overview); no vero.fi alkoholiverolaskuri or tulli.fi reisija URL exists anywhere in the repo. Rather than invent URLs, AuthoritySourceLinks.tsx renders the panel's actual two links under the result totals; adding the two named links is a follow-up requiring URL verification + an OFFICIAL_SOURCES addition in the API)
+- [x] 3.2 Homepage example card: link to `/laskuri` ("tee sama laskelma omilla tuotteillasi") <!-- agent: platform-engineer.fast, depends_on: [], touches: [apps/frontend/src/app/[locale]/page.tsx, apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] --> (cc02df4; Home.exampleCalcLink, i18n Link renders /laskuri in fi)
+
+## 4. Verification
+
+- [ ] 4.1 Update/extend component tests for the touched surfaces (ranking accuracy state, basket limit states, compare/what-if/group-order disclosures, calculator links, homepage link) and run typecheck + eslint <!-- agent: platform-engineer.fast, depends_on: [1.1, 2.1, 2.2, 3.1, 3.2], touches: [] -->
+- [ ] 4.2 Run the content-vocabulary linting suite; both locales pass <!-- agent: platform-engineer.fast, depends_on: [4.1], touches: [] -->
