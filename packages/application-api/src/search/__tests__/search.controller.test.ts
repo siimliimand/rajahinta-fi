@@ -46,6 +46,8 @@ const PROD_Z = {
   depositSystemStatus: false,
   ean: '0642000123456',
   reviewHoldReason: null, // not held (change nonalcoholic-catalog-hygiene)
+    nameQuality: 'ok',
+    nameAnnotation: null, // migration 0037 defaults; no merchant annotation
   weightGrams: 520, // 0.33 l glass bottle, filled
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
@@ -64,6 +66,8 @@ const PROD_A = {
   depositSystemStatus: false,
   ean: '0642000654321',
   reviewHoldReason: null, // not held (change nonalcoholic-catalog-hygiene)
+    nameQuality: 'ok',
+    nameAnnotation: null, // migration 0037 defaults; no merchant annotation
   weightGrams: 720, // 0.50 l glass bottle, filled
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
@@ -85,6 +89,8 @@ const PROD_KARHU_NAME = {
   depositSystemStatus: true,
   ean: '0641000111111',
   reviewHoldReason: null, // not held (change nonalcoholic-catalog-hygiene)
+    nameQuality: 'ok',
+    nameAnnotation: null, // migration 0037 defaults; no merchant annotation
   weightGrams: 345, // 0.33 l can, filled
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
@@ -103,6 +109,8 @@ const PROD_KARHU_BRAND = {
   depositSystemStatus: true,
   ean: '0641000222222',
   reviewHoldReason: null, // not held (change nonalcoholic-catalog-hygiene)
+    nameQuality: 'ok',
+    nameAnnotation: null, // migration 0037 defaults; no merchant annotation
   weightGrams: 345, // 0.33 l can, filled
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),

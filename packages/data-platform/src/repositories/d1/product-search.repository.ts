@@ -84,29 +84,54 @@ type RetailOfferWithCarrierRecord = RetailOfferRecord & {
 };
 
 /**
- * The shared listing-universe predicate (task 3.2, change
- * nonalcoholic-catalog-hygiene, design D2) — ONE definition, imported at
- * every adoption site (browse keys, ranked search, ids/detail, the
- * offer-candidate read behind the €/g ranking, and the savings-snapshot
- * qualification), never reworded per surface: per-surface filters were
- * rejected as drift-prone, and these surfaces have already diverged once
- * (the unitprice-ranking-scale-fix post-mortem).
+ * The physical listing-universe prerequisite — parsed ABV and no review
+ * hold. The base {@link PRODUCT_LISTING_UNIVERSE_SQL} is built from, and
+ * the WHOLE universe the single-product detail reads apply (see
+ * {@link FIND_PRODUCT_IN_UNIVERSE_SQL}).
  *
  * Every canonical product category is an alcohol category, so the
- * physical prerequisite is the whole universe condition: an alcohol-
- * category product must carry a parsed ABV greater than zero and no
- * review hold. Zero- and unknown-ABV rows and rows held for review
- * (product_master.review_hold_reason — the non-alcoholic ingestion
- * guard's correction flag, migration 0029) are outside the catalog's
- * universe, so held products degrade consistently (a 404-shaped absence
- * on detail, exclusion from listings and aggregates) instead of
- * half-rendering.
+ * physical prerequisite is the whole universe condition for a held or
+ * non-alcoholic row: an alcohol-category product must carry a parsed ABV
+ * greater than zero and no review hold. Zero- and unknown-ABV rows and
+ * rows held for review (product_master.review_hold_reason — the
+ * non-alcoholic ingestion guard's correction flag, migration 0029) are
+ * outside the catalog's universe, so held products degrade consistently
+ * (a 404-shaped absence on detail, exclusion from listings and
+ * aggregates) instead of half-rendering.
  *
  * The fragment is written for the `p` alias of product_master — every
  * adoption site aliases the table `p` (add the alias to un-aliased SQL
  * when adopting; do not fork the condition).
  */
-export const PRODUCT_LISTING_UNIVERSE_SQL = `p.alcohol_by_volume IS NOT NULL AND p.alcohol_by_volume > 0 AND p.review_hold_reason IS NULL`;
+const PRODUCT_PHYSICAL_UNIVERSE_SQL = `p.alcohol_by_volume IS NOT NULL AND p.alcohol_by_volume > 0 AND p.review_hold_reason IS NULL`;
+
+/**
+ * The shared listing-universe predicate (task 3.2, change
+ * nonalcoholic-catalog-hygiene, design D2) — ONE definition, imported at
+ * every adoption site (browse keys, ranked search, the offer-candidate
+ * read behind the €/g ranking, and the savings-snapshot qualification),
+ * never reworded per surface: per-surface filters were rejected as
+ * drift-prone, and these surfaces have already diverged once (the
+ * unitprice-ranking-scale-fix post-mortem).
+ *
+ * Since task 2.4 (change product-name-quality-gate) the universe also
+ * carries the name-informativeness gate: a quarantined row
+ * (product_master.name_quality — the ingestion name gate's correction
+ * status, migration 0037) is outside the default public catalog, search
+ * results, the unit-price ranking, and the savings candidate sets (spec
+ * delta), and stays visible in the operator console only. The gate is a
+ * LISTING gate: the single-product detail read keeps the physical
+ * universe alone ({@link PRODUCT_PHYSICAL_UNIVERSE_SQL}), so an
+ * addressed quarantined row still resolves — the findByIdDirect
+ * precedent (a row outside a listing universe stays computable when
+ * addressed directly); the delta excludes quarantined rows from listing
+ * surfaces without mentioning the detail surface.
+ *
+ * The fragment is written for the `p` alias of product_master — every
+ * adoption site aliases the table `p` (add the alias to un-aliased SQL
+ * when adopting; do not fork the condition).
+ */
+export const PRODUCT_LISTING_UNIVERSE_SQL = `${PRODUCT_PHYSICAL_UNIVERSE_SQL} AND p.name_quality = 'ok'`;
 
 /** Column projection shared by every product_master SELECT. */
 const PRODUCT_COLUMNS = `
@@ -122,9 +147,15 @@ const PRODUCT_COLUMNS = `
  * SQL it reads singly: one definition, two execution shapes, zero drift
  * — universe scoping on the detail read cannot diverge between the
  * cold-path batch and the plain lookup.
+ *
+ * The detail read applies the PHYSICAL universe only
+ * ({@link PRODUCT_PHYSICAL_UNIVERSE_SQL}): the name-quality gate is a
+ * listing gate (task 2.4, change product-name-quality-gate) — a
+ * quarantined row stays addressable here, exactly like a held row stays
+ * computable through findByIdDirect.
  */
 const FIND_PRODUCT_IN_UNIVERSE_SQL = `SELECT ${PRODUCT_COLUMNS} FROM product_master p
-          WHERE p.id = ? AND ${PRODUCT_LISTING_UNIVERSE_SQL}`;
+          WHERE p.id = ? AND ${PRODUCT_PHYSICAL_UNIVERSE_SQL}`;
 
 /**
  * {@link D1ProductSearchRepository.findOffers}' full SELECT — the
@@ -160,6 +191,14 @@ interface D1ProductRow {
   readonly ean: string | null;
   readonly weight_grams: number | null;
   readonly review_hold_reason: string | null;
+  /**
+   * Name-quality columns (migration 0037). Optional here because this
+   * repository's SELECT lists predate them and are not widened by the
+   * gate change (task 2.3) — the mapper reads the migration defaults
+   * ('ok' / NULL) when absent. Task 2.4 owns any listing-side use.
+   */
+  readonly name_quality?: string | null;
+  readonly name_annotation?: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -480,6 +519,10 @@ function toContractProduct(row: D1ProductRow): ProductRecord {
     ean: row.ean,
     weightGrams: row.weight_grams,
     reviewHoldReason: row.review_hold_reason,
+    // Migration 0037 columns; this repository's SELECTs predate them, so
+    // absent reads as the migration defaults ('ok' / no commentary).
+    nameQuality: row.name_quality ?? 'ok',
+    nameAnnotation: row.name_annotation ?? null,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
@@ -770,9 +813,10 @@ export const CATEGORY_OFFER_CANDIDATES_LIMIT = 20_000;
  * {@link D1ProductSearchRepository.listCatalogPage}, an unknown value
  * filters strictly and yields zero rows. The shared listing universe
  * (task 3.2, change nonalcoholic-catalog-hygiene) applies on the outer
- * join — the €/g ranking can never see a zero/unknown-ABV row or a held
- * row, for which the whole ethanol-denominator computation is
- * meaningless.
+ * join — the €/g ranking can never see a zero/unknown-ABV row, a held
+ * row, or a quarantined row (task 2.4, change
+ * product-name-quality-gate), for which the whole ethanol-denominator
+ * computation is meaningless or the name uninformative.
  */
 const CATEGORY_OFFER_CANDIDATES_SQL = `
   SELECT p.id AS product_id, p.name, p.brand, p.category,
@@ -1201,10 +1245,14 @@ export class D1ProductSearchRepository extends ProductRepository {
 
   /** @inheritdoc */
   async findById(id: number): Promise<ProductRecord | null> {
-    // The detail read resolves through the SAME listing universe as every
-    // other surface (design D2, change nonalcoholic-catalog-hygiene): a
-    // held or non-alcoholic row degrades consistently to not-found
-    // instead of half-rendering a product the catalog cannot list.
+    // The detail read resolves through the PHYSICAL listing universe as
+    // every other surface (design D2, change nonalcoholic-catalog-hygiene):
+    // a held or non-alcoholic row degrades consistently to not-found
+    // instead of half-rendering a product the catalog cannot list. The
+    // name-quality gate is deliberately NOT applied here — quarantine is
+    // a listing exclusion (task 2.4, change product-name-quality-gate);
+    // the delta excludes quarantined rows from listings only, so an
+    // addressed quarantined row still renders its detail page.
     return this.findByIdInUniverse(id);
   }
 
@@ -1264,8 +1312,9 @@ export class D1ProductSearchRepository extends ProductRepository {
    * `findById` → `findOffers` pair the product page paid before. Both
    * statements are the extracted byte-identical SQL of the single reads
    * ({@link FIND_PRODUCT_IN_UNIVERSE_SQL}, {@link FIND_OFFERS_SQL}), so
-   * their guarantees hold unchanged: listing-universe scoping on the
-   * product row, the latest-observation-per-merchant offer collapse, and
+   * their guarantees hold unchanged: physical-universe scoping on the
+   * product row (the name-quality gate is listing-only), the
+   * latest-observation-per-merchant offer collapse, and
    * the LEFT-joined carrier assignment.
    *
    * Null semantics: when the product statement returns no row (absent
@@ -1639,8 +1688,11 @@ export class D1ProductSearchRepository extends ProductRepository {
    * making the fetch-then-sort-then-limit shape safe. The shared listing
    * universe applies (task 3.2, change nonalcoholic-catalog-hygiene) —
    * the savings surface sources its registry read (name map, evaluated
-   * coverage count) from this listing, so held and non-alcoholic rows
-   * can never contribute to an aggregate.
+   * coverage count) from this listing, so held, non-alcoholic, and
+   * quarantined rows (task 2.4, change product-name-quality-gate)
+   * can never contribute to an aggregate; a quarantined product's
+   * snapshot row fails the savings routes' name-resolution defense and
+   * is omitted, never rendered.
    */
   private async listAlphabetical(limit: number): Promise<ProductRecord[]> {
     const rows = (

@@ -1,0 +1,26 @@
+-- Task 2.1 (change product-name-quality-gate): storage for the
+-- name-informativeness gate and the merchant-annotation split. Ingestion
+-- (later tasks) classifies every display name and strips parenthetical
+-- commentary; this migration only adds the storage — it does not
+-- classify.
+--
+-- name_quality carries the gate's two-state value set: 'ok' passes to
+-- the default surfaces, 'quarantined' rows are excluded from the default
+-- public catalog, search results, the unit-price ranking, and savings
+-- candidate sets, and stay visible in the operator console with the raw
+-- feed name for enrichment. The CHECK references only the added column —
+-- the one CHECK form ALTER TABLE ADD COLUMN accepts — and stores under
+-- the same product_master_*_check naming the table-level CHECKs use
+-- (0000/0002).
+--
+-- DEFAULT 'ok' is the existing-data contract: all 20,070 pre-0037 rows
+-- read as ok until the backfill task reclassifies them; no row is
+-- rewritten at deploy time.
+--
+-- name_annotation holds the merchant-side parenthetical commentary
+-- stripped from the display name ("saatavuus 1 plo", purchase limits,
+-- restock remarks) for the enrichment queue. Nullable forward column per
+-- the review_hold_reason precedent (0029): NULL is the meaningful birth
+-- state of every product (no commentary), not missing data.
+ALTER TABLE `product_master` ADD COLUMN `name_quality` text(32) NOT NULL DEFAULT 'ok' CONSTRAINT "product_master_name_quality_check" CHECK("product_master"."name_quality" IN ('ok', 'quarantined'));--> statement-breakpoint
+ALTER TABLE `product_master` ADD COLUMN `name_annotation` text;

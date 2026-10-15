@@ -152,6 +152,8 @@ function makeProduct(
     ean: null,
     weightGrams: null,
     reviewHoldReason: null, // not held (change nonalcoholic-catalog-hygiene)
+    nameQuality: 'ok',
+    nameAnnotation: null, // migration 0037 defaults; no merchant annotation
     createdAt: CALCULATED_AT,
     updatedAt: CALCULATED_AT,
     ...overrides,

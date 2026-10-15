@@ -270,6 +270,19 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
     }
   });
 
+  it('ops console: the name-quality quarantine listing rides the guard prefix (product-name-quality-gate 3.1)', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildProbeApp();
+
+    const closed = await probe(app, testEnv(d1), '/ops/console/name-quality/quarantined');
+    await expectEnvelope(closed, 403, { message: 'Forbidden' });
+
+    const open = await probe(app, permissiveEnv(d1), '/ops/console/name-quality/quarantined', {
+      headers: { authorization: `Bearer ${FAKE_OPS_TOKEN}` },
+    });
+    expect(open.status).toBe(200);
+  });
+
   it('newsletter: subscribe is rate-limited public; confirm/unsubscribe are token-capability (task 5.3)', async () => {
     const { d1 } = openMigratedD1();
     const app = buildProbeApp();
@@ -499,6 +512,9 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/ops/console/match-review/:id/confirm', ['POST'], 'opsAccess'],
   ['/ops/console/match-review/:id/reject', ['POST'], 'opsAccess'],
   ['/ops/console/merchants', ['POST'], 'opsAccess'],
+  // Name-quality quarantine queue (product-name-quality-gate 3.1) — the
+  // read-only enrichment listing on the opsAccess prefix.
+  ['/ops/console/name-quality/quarantined', ['GET'], 'opsAccess'],
   ['/ops/console/newsletter/notify', ['POST'], 'opsAccess'],
   // Offer verification (transport-confidence-unlock 5.1) — the human
   // write path for VERIFIED; rides the opsAccess prefix like the rest.
