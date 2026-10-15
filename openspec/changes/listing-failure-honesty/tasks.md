@@ -18,5 +18,5 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Run typecheck, eslint, and the frontend suites across touched paths <!-- agent: platform-engineer.fast, depends_on: [2.4, 3.1], touches: [] -->
+- [x] 4.1 Run typecheck, eslint, and the frontend suites across touched paths <!-- agent: platform-engineer.fast, depends_on: [2.4, 3.1], touches: [] --> (PASS at ad6f3bd: tsc clean, eslint 0 findings on 5 touched files, YAML valid, frontend 1592/1592; api-worker suite blocked by a pre-existing host limitation — node:sqlite without FTS5 — no api-worker files in this change)
 - [ ] 4.2 Staging deploy + manual failure matrix: fresh browser (no age cookie) on /grammahinta renders the age CTA — not "backend did not respond"; simulated 5xx renders the transient state with the seeded stale table + as-of label <!-- agent: devops-engineer.fast, depends_on: [4.1], touches: [] -->
