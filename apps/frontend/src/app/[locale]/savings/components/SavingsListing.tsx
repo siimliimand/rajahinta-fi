@@ -54,6 +54,14 @@ export interface SavingsResponse {
     readonly withReference: number;
     readonly listed: number;
   };
+  /**
+   * Whether the category holds at least one eligible import-favourable
+   * row before the limit clamp (savings-honest-framing). False marks the
+   * honest zero state: the category currently has no product whose
+   * estimated landed total sits below the Alko reference — the empty
+   * listing is the answer, not missing data.
+   */
+  readonly hasFavourable: boolean;
   readonly rows: readonly SavingsRow[];
 }
 
@@ -62,7 +70,8 @@ export interface SavingsResponse {
 // ---------------------------------------------------------------------------
 
 /**
- * The savings table (insight-surfaces task 2.4, spec savings-discovery).
+ * The savings table (insight-surfaces task 2.4, spec savings-discovery;
+ * honest zero state, change savings-honest-framing).
  *
  * Client-fetched like the value ranking: the endpoint is age-gated, and
  * only browser fetches carry the confirmation cookie and trigger the
@@ -70,8 +79,12 @@ export interface SavingsResponse {
  * state are explicit; rows are never invented.
  *
  * The header strip renders the snapshot's as-of day and the three
- * coverage counts verbatim from the response, so the funnel size is
- * visible even when the category narrows the list to zero.
+ * coverage counts verbatim from the response in every data state, so
+ * the funnel size stays visible even when the category narrows the list
+ * to zero — that zero now means "no currently import-favourable
+ * products", and the state below the header says exactly that together
+ * with the counts that contextualize it. The ordering statement lives
+ * in the server shell above and is unaffected.
  */
 export default function SavingsListing({
   category,
@@ -141,6 +154,13 @@ export default function SavingsListing({
     return null;
   }
 
+  // Loss rows never render as savings rows (spec savings-discovery,
+  // "Loss rows never listed as savings"): the listing route filters to
+  // negative gaps and excludes self-pairs, so a non-negative gap here
+  // would be a contract violation — dropped client-side rather than
+  // shown as a false saving.
+  const visibleRows = data.rows.filter((row) => row.gapCents < 0);
+
   return (
     <div data-testid="savings-listing">
       {/* ── As-of + coverage header ── */}
@@ -162,13 +182,20 @@ export default function SavingsListing({
         </p>
       </section>
 
-      {data.rows.length === 0 && (
+      {/* ── Honest zero state (savings-honest-framing): no negative-gap
+          row exists for the category. The as-of date and the coverage
+          counts above stay visible, so the emptiness reads as an
+          evaluated answer — not as missing data. ── */}
+      {visibleRows.length === 0 && (
         <div data-testid="savings-empty">
-          <EmptyState title={t('emptyTitle')} description={t('emptyBody')} />
+          <EmptyState
+            title={t('noFavourableTitle')}
+            description={t('noFavourableBody')}
+          />
         </div>
       )}
 
-      {data.rows.length > 0 && (
+      {visibleRows.length > 0 && (
         <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           <table className="w-full text-sm">
             <caption className="sr-only">
@@ -199,7 +226,7 @@ export default function SavingsListing({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {data.rows.map((row, index) => (
+              {visibleRows.map((row, index) => (
                 <SavingsRowView
                   key={row.productId}
                   row={row}

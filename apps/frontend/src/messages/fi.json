@@ -1480,7 +1480,9 @@
     "errorTitle": "Luetteloa ei saatu haettua",
     "errorBody": "Taustajärjestelmä ei vastannut. Voit yrittää uudelleen.",
     "emptyTitle": "Ei näytettäviä rivejä",
-    "emptyBody": "Tälle tuoteryhmälle ei ole vielä päivittynyt yhtään riviä, jolla on vertailukelpoinen Alko-viitehinta. Rivit ilmestyvät tänne, kun päivittäinen erä tuottaa niitä."
+    "emptyBody": "Tälle tuoteryhmälle ei ole vielä päivittynyt yhtään riviä, jolla on vertailukelpoinen Alko-viitehinta. Rivit ilmestyvät tänne, kun päivittäinen erä tuottaa niitä.",
+    "noFavourableTitle": "Ei tällä hetkellä kannattavia tuonteja",
+    "noFavourableBody": "Yksikään tämän tuoteryhmän arvioiduista tuotteista ei saa tällä hetkellä arvioitua kokonaishintaa Suomeen, joka jäisi Alko-viitehinnan alle. Luettelossa näkyvät vain tuotteet, joiden arvioitu kokonaishinta on viitehintaa matalampi; tilanne voi muuttua, kun päivittäinen aineisto päivittyy."
   },
   "ContentSafetyBadge": {
     "promotional": "Mainoskieltä havaittu: \"{pattern}\" ({language})",
