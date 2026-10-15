@@ -14,6 +14,11 @@
  *   5. Age-gate recovery (age-gate-recovery task 3.1): a 403 whose body
  *      carries `code: 'AGE_GATE_REQUIRED'` dispatches exactly one window
  *      `age-gate:required` event before the throw; other failures do not.
+ *   6. The failure-class mapping (listing-failure-honesty task 1.2):
+ *      403→age-gate, 429→rate-limited, 5xx→server, abort→timeout,
+ *      TypeError→network, with `unknown` as the honest residual for
+ *      out-of-taxonomy statuses; transport classes carry status 0, and a
+ *      classified non-2xx error still echoes the API's `x-request-id`.
  *
  * @module ApiFetchClientTest
  */
@@ -284,5 +289,122 @@ describe('age-gate:required recovery dispatch (age-gate-recovery task 3.1)', () 
     expect(err).toBeInstanceOf(ApiFetchError);
     expect((err as ApiFetchError).status).toBe(404);
     expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Failure-class mapping (listing-failure-honesty task 1.2): every failed
+ * `request()` — a non-2xx answer or a fetch that never answers — carries a
+ * coarse {@link ApiFailureClass} from which surfaces pick their distinct
+ * failure state.
+ */
+describe('failure-class mapping (listing-failure-honesty task 1.2)', () => {
+  /** Mock one completed exchange with the given status; return the throw. */
+  async function errorForStatus(
+    status: number,
+    responseHeaders: Record<string, string> = {},
+  ): Promise<ApiFetchError> {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      jsonResponse(
+        { statusCode: status, message: `HTTP ${status}`, error: 'Error' },
+        status,
+        responseHeaders,
+      ),
+    );
+    const err = await request('/api/v1/products?q=karhu').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiFetchError);
+    return err as ApiFetchError;
+  }
+
+  /** Mock a fetch that never answers; return the classified throw. */
+  async function errorForRejection(rejection: unknown): Promise<ApiFetchError> {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(rejection);
+    const err = await request('/api/v1/products?q=karhu').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiFetchError);
+    return err as ApiFetchError;
+  }
+
+  beforeEach(() => {
+    globalThis.fetch = vi.fn();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('maps 403 to age-gate carrying the HTTP status and the echoed request id', async () => {
+    const err = await errorForStatus(403, {
+      'x-request-id': 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    });
+
+    expect(err.failureClass).toBe('age-gate');
+    expect(err.status).toBe(403);
+    expect(err.requestId).toBe('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
+  });
+
+  it('maps 429 to rate-limited carrying the HTTP status', async () => {
+    const err = await errorForStatus(429);
+
+    expect(err.failureClass).toBe('rate-limited');
+    expect(err.status).toBe(429);
+  });
+
+  it('maps a 5xx response to server carrying the HTTP status', async () => {
+    for (const status of [500, 503]) {
+      const err = await errorForStatus(status);
+
+      expect(err.failureClass).toBe('server');
+      expect(err.status).toBe(status);
+    }
+  });
+
+  it('maps an out-of-taxonomy 400 to the unknown residual, not a transport class', async () => {
+    const err = await errorForStatus(400);
+
+    expect(err.failureClass).toBe('unknown');
+    expect(err.status).toBe(400);
+  });
+
+  it('maps an AbortSignal.timeout rejection (TimeoutError) to timeout with status 0', async () => {
+    const err = await errorForRejection(
+      new DOMException('The signal timed out.', 'TimeoutError'),
+    );
+
+    expect(err.failureClass).toBe('timeout');
+    expect(err.status).toBe(0);
+  });
+
+  it('maps a plain-Error AbortError rejection to timeout with status 0', async () => {
+    // Engines without `AbortSignal.timeout` surface the same abort as an
+    // `AbortError` on a bare `Error`; both names must classify as timeout.
+    const aborted = new Error('The operation was aborted.');
+    aborted.name = 'AbortError';
+
+    const err = await errorForRejection(aborted);
+
+    expect(err.failureClass).toBe('timeout');
+    expect(err.status).toBe(0);
+  });
+
+  it('maps a TypeError rejection to network with status 0', async () => {
+    const err = await errorForRejection(new TypeError('Failed to fetch'));
+
+    expect(err.failureClass).toBe('network');
+    expect(err.status).toBe(0);
+  });
+
+  it('leaves no-response markers null on a transport failure and preserves the rejection', async () => {
+    const rejection = new TypeError('Failed to fetch');
+
+    const err = await errorForRejection(rejection);
+
+    // No exchange happened, so no body and no echoed request id exist.
+    expect(err.requestId).toBeNull();
+    expect(err.body).toBeNull();
+    // The original rejection rides in `cause` (CORS/network detail).
+    expect(err.cause).toBe(rejection);
+    expect(err.message).toContain('Failed to fetch');
   });
 });

@@ -1460,7 +1460,12 @@
     "errorTitle": "The listing could not be loaded",
     "errorBody": "The backend did not respond. You can try again.",
     "emptyTitle": "No rows to show",
-    "emptyBody": "No offer in this price category currently has a computable ethanol unit price."
+    "emptyBody": "No offer in this price category currently has a computable ethanol unit price.",
+    "ageGateCtaTitle": "Age confirmation needed",
+    "ageGateCtaBody": "This price listing is available only after age confirmation.",
+    "ageGateCtaLink": "Go to age confirmation",
+    "rateLimitBody": "The service is receiving a very high number of requests right now. Please try again shortly.",
+    "staleAsOfLabel": "Data as of {date}"
   },
   "SavingsPage": {
     "metaTitle": "Landed-cost gap versus the Alko reference",
