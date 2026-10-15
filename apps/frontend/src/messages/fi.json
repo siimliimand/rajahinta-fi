@@ -1800,7 +1800,6 @@
     "shareLine": "{share} raportoiduista loppusumista on j\u00e4nyt 5 %:n sis\u00e4\u00e4n arviosta.",
     "countLine": "Otoskoko: {count, plural, one {# lopputulos} other {# lopputulosta}}",
     "emptyTitle": "Ei viel\u00e4 k\u00e4ytt\u00e4jien raportoimia lopputuloksia",
-    "emptyBody": "Kun vierailijat raportoivat laskelmansa todellisen loppusumman, t\u00e4h\u00e4n julkaistaan arvion 5 %:n sis\u00e4\u00e4n j\u00e4\u00e4neiden raporttien osuus. Mit\u00e4\u00e4n ei n\u00e4ytet\u00e4 ennen sit\u00e4.",
     "thresholdBody": "Tarkkuustilasto julkaistaan, kun k\u00e4ytt\u00e4jien raportoimia lopputuloksia on riitt\u00e4v\u00e4sti. Silloin t\u00e4h\u00e4n n\u00e4ytet\u00e4\u00e4n, kuinka suuri osuus raporteista on j\u00e4\u00e4nyt 5 %:n sis\u00e4\u00e4n arviosta.",
     "asOfLine": "Laskettu {date}",
     "loading": "Ladataan tarkkuustilastoa\u2026",

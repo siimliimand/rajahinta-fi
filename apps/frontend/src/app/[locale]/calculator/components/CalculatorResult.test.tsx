@@ -888,3 +888,27 @@ describe('CalculatorResult empirical-margin meter (hedge-dedup 4.1)', () => {
     expect(screen.queryByTestId('confidence-meter')).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Contextual authority links (audit-copy-batch task 3.1): the declaration
+// guidance panel's official-source set rides directly under the result
+// totals, where the visitor verifies against the authorities. The link
+// set's own contract (labels, hrefs, anchor conventions) is pinned in
+// AuthoritySourceLinks.test.tsx.
+// ---------------------------------------------------------------------------
+
+describe('CalculatorResult authority links (audit-copy-batch 3.1)', () => {
+  it('renders the official-source link set under the result totals', () => {
+    renderWithIntl(<CalculatorResult result={baseResult()} />);
+
+    const links = screen.getByTestId('authority-source-links');
+    expect(links).toBeInTheDocument();
+    expect(links).toHaveTextContent('Viranomaislähteet');
+    // Positioned below the hero total — after it, never inside the
+    // itemized breakdown above.
+    const total = screen.getByText('Yhteensä');
+    expect(
+      total.compareDocumentPosition(links) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+  });
+});

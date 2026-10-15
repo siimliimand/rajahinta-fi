@@ -1800,7 +1800,6 @@
     "shareLine": "{share} of reported totals have been within 5 % of the estimate.",
     "countLine": "Sample size: {count, plural, one {# outcome} other {# outcomes}}",
     "emptyTitle": "No user-reported outcomes yet",
-    "emptyBody": "When visitors report the actual total of their calculation, the share of reports within 5 % of the estimate is published here. Nothing is shown until then.",
     "thresholdBody": "The accuracy statistic is published once enough user-reported outcomes exist. It then shows the share of reports within 5 % of the estimate.",
     "asOfLine": "Computed {date}",
     "loading": "Loading the accuracy statistic\u2026",
