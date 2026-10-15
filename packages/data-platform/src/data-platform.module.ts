@@ -4,7 +4,10 @@
  * injection tokens.
  *
  * Also registers the {@code TaxRuleRepositoryAdapter} under the
- * {@code TAX_RULE_REPOSITORY_PORT} token consumed by core-domain services.
+ * {@code TAX_RULE_REPOSITORY_PORT} token and the
+ * {@code DrizzleCalendarEventRepository} under the
+ * {@code CALENDAR_EVENT_REPOSITORY_PORT} token consumed by core-domain
+ * services.
  *
  * ## Usage
  *
@@ -21,6 +24,7 @@ import { Module } from '@nestjs/common';
 import {
   TAX_RULE_REPOSITORY_PORT,
   CORRECTION_REPOSITORY_PORT,
+  CALENDAR_EVENT_REPOSITORY_PORT,
 } from '@rajahinta/core-domain';
 import { DrizzleModule } from './db/drizzle.module';
 import {
@@ -45,6 +49,7 @@ import { DrizzleTaxRateRepository } from './repositories/tax-rate.repository';
 import { DrizzleTransportOfferRepository } from './repositories/transport-offer.repository';
 import { DrizzleCalculationRecordRepository } from './repositories/calculation-record.repository';
 import { TaxRuleRepositoryAdapter } from './repositories/tax-rate.repository';
+import { DrizzleCalendarEventRepository } from './repositories/calendar-event.repository';
 import { DrizzleCorrectionRepository } from './repositories/correction.repository';
 import { DrizzleAccountRepository } from './repositories/account.repository';
 import { DrizzleSavedBasketRepository } from './repositories/saved-basket.repository';
@@ -88,6 +93,16 @@ import {
     {
       provide: TAX_RULE_REPOSITORY_PORT,
       useClass: TaxRuleRepositoryAdapter,
+    },
+    // Domain-port adapter for the tax-change calendar (task 3.1, change
+    // tax-change-calendar). D1-backed: calendar_events has no pg
+    // counterpart, so the Worker passes its binding at its own
+    // composition root (new DrizzleCalendarEventRepository(env.DB)) and
+    // the binding is optional here (the DrizzleCorrectionRepository stub
+    // precedent) — reading unbound fails loudly.
+    {
+      provide: CALENDAR_EVENT_REPOSITORY_PORT,
+      useClass: DrizzleCalendarEventRepository,
     },
     // Domain-port adapter for correction (stub — no DB schema yet)
     {
@@ -182,6 +197,7 @@ import {
     DrizzleTransportOfferRepository,
     DrizzleCalculationRecordRepository,
     TaxRuleRepositoryAdapter,
+    DrizzleCalendarEventRepository,
     DrizzleCorrectionRepository,
     DrizzleAccountRepository,
     DrizzleSavedBasketRepository,
@@ -219,12 +235,14 @@ AggregationWatermarkRepository,
     // Domain-port adapter tokens
     TAX_RULE_REPOSITORY_PORT,
     CORRECTION_REPOSITORY_PORT,
+    CALENDAR_EVENT_REPOSITORY_PORT,
     // Concrete implementations — inject directly when needed
     DrizzleProductRepository,
     DrizzleTaxRateRepository,
     DrizzleTransportOfferRepository,
     DrizzleCalculationRecordRepository,
     TaxRuleRepositoryAdapter,
+    DrizzleCalendarEventRepository,
     DrizzleCorrectionRepository,
     DrizzleAccountRepository,
     DrizzleSavedBasketRepository,

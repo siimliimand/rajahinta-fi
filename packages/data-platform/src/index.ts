@@ -430,6 +430,7 @@ export {
   type ExpectedCalendarEvent,
   type ValidatedCalendarEvent,
 } from './repositories/calendar-event-validator';
+export { DrizzleCalendarEventRepository } from './repositories/calendar-event.repository';
 
 // ---------------------------------------------------------------------------
 // Drizzle connection provider

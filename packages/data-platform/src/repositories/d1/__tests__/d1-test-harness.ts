@@ -78,6 +78,11 @@ export function createD1Shim(db: DatabaseSync): D1DatabaseLike {
    * exactly as the repositories call them.
    */
   const preparedSql = new WeakMap<D1PreparedStatementLike, string>();
+  /** Executor statement surface plus the binding's raw() — the
+   * drizzle-orm/d1 driver's select path reads rows through raw(). */
+  interface D1PreparedStatementWithRaw extends D1PreparedStatementLike {
+    raw<T>(): Promise<T>;
+  }
   function prepare(query: string): D1PreparedStatementLike {
     const statement = db.prepare(query);
     let params: unknown[] = [];
@@ -85,7 +90,7 @@ export function createD1Shim(db: DatabaseSync): D1DatabaseLike {
     // `unknown[]` surface; the repositories only bind null/number/string.
     const bindable = (): Parameters<StatementSync['all']> =>
       params as Parameters<StatementSync['all']>;
-    const bound: D1PreparedStatementLike = {
+    const bound: D1PreparedStatementWithRaw = {
       bind(...values: unknown[]) {
         params = values;
         return bound;
@@ -110,6 +115,14 @@ export function createD1Shim(db: DatabaseSync): D1DatabaseLike {
             last_row_id: Number(result.lastInsertRowid),
           },
         };
+      },
+      async raw<T>(): Promise<T> {
+        // The real binding's raw() returns row VALUES as arrays in column
+        // order (the drizzle-orm/d1 driver's select path reads through it).
+        // node:sqlite builds each row object in column order, so
+        // Object.values preserves the column order.
+        const rows = statement.all(...bindable()) as Record<string, unknown>[];
+        return rows.map((row) => Object.values(row)) as T;
       },
     };
     preparedSql.set(bound, query);
