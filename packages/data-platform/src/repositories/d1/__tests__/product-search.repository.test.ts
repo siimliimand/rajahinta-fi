@@ -403,6 +403,10 @@ describe('D1ProductSearchRepository — contract row shapes', () => {
       // Seed row is not held — the nullable column maps to null (change
       // nonalcoholic-catalog-hygiene).
       reviewHoldReason: null,
+      // Migration 0037/0022 columns — the contract mapping stamps the
+      // defaults for every legacy row.
+      nameQuality: 'ok',
+      nameAnnotation: null,
       createdAt: expect.any(Date),
       updatedAt: expect.any(Date),
     });
@@ -933,6 +937,10 @@ describe('D1ProductSearchRepository.listCatalogPage — catalog listing (design 
       ean: null,
       weightGrams: null,
       reviewHoldReason: null,
+      // Migration 0037/0022 columns — the contract mapping stamps the
+      // defaults for every legacy row.
+      nameQuality: 'ok',
+      nameAnnotation: null,
       createdAt: expect.any(Date),
       updatedAt: expect.any(Date),
     });
