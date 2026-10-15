@@ -317,8 +317,10 @@ function snapshotInput(
     landedTotalCents: 1590,
     landedReliability: 'ESTIMATED',
     confidence: 'MEDIUM',
-    gapCents: 1009,
-    gapBasisPoints: 3882,
+    // Negative gap: landed 1590 below the 2599 Alko reference — the
+    // savings listing's eligibility rule drops positive-gap rows.
+    gapCents: -1009,
+    gapBasisPoints: -3882,
     taxDatasetVersion: 'v3.0-2026',
     referenceLinkId: null,
     ...overrides,

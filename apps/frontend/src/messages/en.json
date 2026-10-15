@@ -1497,7 +1497,9 @@
     "errorTitle": "The listing could not be loaded",
     "errorBody": "The backend did not respond. You can try again.",
     "emptyTitle": "No rows to show",
-    "emptyBody": "No rows with a comparable Alko reference price have appeared for this category yet. Rows appear here once the daily pass produces them."
+    "emptyBody": "No rows with a comparable Alko reference price have appeared for this category yet. Rows appear here once the daily pass produces them.",
+    "noFavourableTitle": "No currently import-favourable products",
+    "noFavourableBody": "None of the evaluated products in this category currently has an estimated landed cost in Finland below the Alko reference price. The listing shows only products whose estimated landed total sits below the reference; the picture can change as the daily dataset updates."
   },
   "ContentSafetyBadge": {
     "promotional": "Promotional language detected: \"{pattern}\" ({language})",
