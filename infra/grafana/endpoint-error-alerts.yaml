@@ -1,0 +1,164 @@
+# Rajahinta public listing-endpoint 5xx share alerts (change
+# listing-failure-honesty, task 3.1 / spec "Public endpoint error
+# alerting") — Grafana-managed alert rules in provisioning format
+# (apiVersion: 1), importable into Grafana Cloud. Companion to
+# data-quality-alerts.yaml and d1-spend-alerts.yaml (same rule shape,
+# different data planes).
+#
+# WHAT IT MEASURES: the 5xx SHARE of completed HTTP requests per public
+# listing route pattern, from the request counters the Worker's
+# requestMetrics middleware writes to Analytics Engine (see
+# apps/api-worker/src/observability/METRICS.md, "Request counter"): one
+# data point per completed request, index1 = route-pattern bucket
+# (c.req.routePath), blob2 = status class ('2xx'|'3xx'|'4xx'|'5xx'),
+# blob3 = exact status code, request counts weighted by
+# _sample_interval. The dataset name selects the environment: this rule
+# watches rajahinta-api-metrics-production only (unlike the account-level
+# D1 spend rule, which deliberately does not filter by environment).
+#
+# ROUTE PATTERN MAP — load-bearing; only index1 values the code actually
+# writes. The spec's four public listing surfaces resolve to these:
+#   - unitprice ranking → '/api/v1/unitprice/ranking'
+#     (apps/api-worker/src/routes/unitprice.routes.ts)
+#   - catalog + search → '/api/v1/products' and '/api/v1/products/:id'
+#     (apps/api-worker/src/routes/search.routes.ts — there is NO
+#     /api/v1/search route; the search handler is served AT
+#     /api/v1/products, the historical/price-context subroutes are
+#     separate index1 patterns)
+#   - savings → '/api/v1/savings', '/api/v1/savings/overview',
+#     '/api/v1/savings/top', '/api/v1/savings/best-per-merchant'
+#     (apps/api-worker/src/routes/savings.routes.ts)
+# Thresholding is PER PATTERN: GROUP BY route yields one series per
+# covered pattern and the threshold evaluates each independently.
+#
+# THRESHOLD PROVENANCE — share > 5% for 30m, with a ≥ 20-request guard:
+#   - the worker is a read-only D1 surface; there is NO expected 5xx
+#     baseline, so even a small share is a real regression — the
+#     threshold's only job is to never page on a stray failure;
+#   - the minimum-request guard lives inside the SQL
+#     (if(total >= 20, share, 0)): a route with fewer than ~20 requests
+#     in the hour reports 0 regardless of raw share, so ONE stray 500 on
+#     a quiet route can never fire (1/19 ≈ 5.3% unguarded); at the guard
+#     boundary a single 5xx is exactly 5% and the comparison is strict
+#     (>) — firing requires 2+ failing requests out of a 20–40-request
+#     hour, sustained;
+#   - `for: 30m` = 6 consecutive 5m evaluations over a rolling 1 h
+#     window: a deploy blip that self-heals inside half an hour stays
+#     quiet; a sustained regression pages within ~30–40 min of onset.
+#
+# NO DATA: noDataState stays NoData on purpose (the spec forbids paging
+# on it): an empty AE response is a transport/permission problem, and a
+# covered route that simply receives no traffic for an hour yields no
+# rows too — quiet, not a failure. Unlike the data-quality cadence rules
+# (noDataState: Alerting because a silent gauge writer IS the blind
+# spot), this rule watches request traffic, not a heartbeat producer.
+#
+# ROUTING: rules carry only `severity` labels — route them through your
+# Grafana Cloud notification policy / contact points (Alerting →
+# Notification policies), same as data-quality-alerts.yaml. This is a
+# public-trust availability signal, not a data-corruption one —
+# `warning`, not `critical`.
+#
+# IMPORT: replace RAJAHINTA_AE_DATASOURCE_UID with the SAME AE SQL
+# JSON/Infinity data source data-quality-alerts.yaml uses and
+# CF_ACCOUNT_ID with your Cloudflare account id (see infra/README.md,
+# "Data-quality panel" — same endpoint, same Bearer credential). `if` and
+# `sumIf` are in the documented AE SQL function set (Cloudflare
+# Analytics Engine SQL reference); verify the rendered body once at
+# import (Grafana → Alerting → the rule → query inspector), as with the
+# other AE-backed rules.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: rajahinta-endpoint-errors
+    folder: Rajahinta
+    interval: 5m
+    rules:
+      - title: RajahintaListingRoutes5xxShare
+        condition: C
+        for: 30m
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: >-
+            The 5xx share of a public listing route exceeded 5% of requests over a
+            rolling hour (route {{ $labels.route }}) — sustained for 30 min, so this
+            is not a single stray 500: the Worker is a read-only D1 surface with no
+            expected 5xx baseline, and visitors on this surface are receiving server
+            errors. Sustained 5xx on the ranking/catalog/search/savings surfaces is
+            the listing-failure regression class this rule exists for.
+          runbook: >-
+            1) First diagnostic step — break the 5xx down by exact status code with
+            the Cloudflare AE SQL API (dataset rajahinta-api-metrics-production):
+            SELECT blob3 AS status_code, sum(_sample_interval) AS requests FROM
+            rajahinta-api-metrics-production WHERE index1 = '<route>' AND blob2 = '5xx'
+            AND timestamp > NOW() - INTERVAL '1' HOUR GROUP BY status_code.
+            Companion surface for stack traces: Cloudflare dashboard Worker logs /
+            wrangler tail.
+            2) Map the firing route pattern to its repository file:
+            /api/v1/unitprice/ranking → apps/api-worker/src/routes/unitprice.routes.ts;
+            /api/v1/products (the search route port) and /api/v1/products/:id →
+            apps/api-worker/src/routes/search.routes.ts;
+            /api/v1/savings, /api/v1/savings/overview, /api/v1/savings/top,
+            /api/v1/savings/best-per-merchant →
+            apps/api-worker/src/routes/savings.routes.ts.
+            3) Check whether the errors started with the most recent Worker deploy
+            (a 5xx here is an unhandled exception in the route handler or its D1
+            reads) and roll back / fix-forward accordingly.
+            4) If errors cluster on one route only, reproduce the failing request
+            locally (the exact status code from step 1 narrows the handler path);
+            a route that recovers on its own was most likely transient D1 pressure.
+        labels:
+          severity: warning
+          team: rajahinta
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: RAJAHINTA_AE_DATASOURCE_UID
+            model:
+              datasource:
+                type: yesoreyeram-infinity-datasource
+                uid: RAJAHINTA_AE_DATASOURCE_UID
+              data: >-
+                SELECT index1 AS route,
+                       if(sum(_sample_interval) >= 20,
+                          sumIf(_sample_interval, blob2 = '5xx') / sum(_sample_interval),
+                          0) AS error_share
+                FROM rajahinta-api-metrics-production
+                WHERE index1 IN ('/api/v1/unitprice/ranking', '/api/v1/products',
+                                 '/api/v1/products/:id', '/api/v1/savings',
+                                 '/api/v1/savings/overview', '/api/v1/savings/top',
+                                 '/api/v1/savings/best-per-merchant')
+                  AND timestamp > NOW() - INTERVAL '1' HOUR
+                GROUP BY route
+                ORDER BY error_share DESC
+              format: table
+              method: POST
+              parser: backend
+              refId: A
+              source: response
+              type: json
+              url: https://api.cloudflare.com/client/v4/accounts/CF_ACCOUNT_ID/analytics_engine/sql?dataset=rajahinta-api-metrics-production
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0.05]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              type: threshold

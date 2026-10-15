@@ -36,6 +36,7 @@ import type {
 import type { ConfidenceLevel, ReliabilityStatus } from '@/lib/types';
 import { searchProducts } from '@/lib/api';
 import { optimizeBasket, classifyBasketError } from '@/lib/basket.client';
+import { Link } from '@/i18n/navigation';
 import {
   CONFIDENCE_LEVEL_META,
   RELIABILITY_STATUS_META,
@@ -58,6 +59,13 @@ import DisclaimerBanner from '../../calculator/components/DisclaimerBanner';
 // ---------------------------------------------------------------------------
 
 const MAX_ITEMS = 10;
+/**
+ * Proximity window (audit-copy-batch task 2.2, spec web-application
+ * "Tool-limit disclosure"): the remaining capacity is named from two free
+ * slots onward — five slots (the 30-item basket's window) would be half
+ * of this smaller cap.
+ */
+const CAP_PROXIMITY_SLOTS = 2;
 const MIN_QUERY_LENGTH = 2;
 const DEFAULT_DESTINATION = 'FI';
 
@@ -497,6 +505,12 @@ export default function BasketComparisonSection() {
   }, [items, destination, transportArrangement, tPage]);
 
   const atCapacity = items.length >= MAX_ITEMS;
+  /**
+   * Proximity disclosure (task 2.2): from 8 of 10 items the free slots
+   * are named before the next add silently does nothing; at the cap the
+   * at-limit message takes over.
+   */
+  const nearCap = !atCapacity && items.length >= MAX_ITEMS - CAP_PROXIMITY_SLOTS;
   const canOptimize = items.length > 0 && !optimizing;
 
   return (
@@ -514,9 +528,30 @@ export default function BasketComparisonSection() {
         </h3>
 
         {atCapacity ? (
-          <p className="text-sm text-amber-700">
-            {tBasket('basketFull', { max: MAX_ITEMS })}
-          </p>
+          <div>
+            <p className="text-sm text-amber-700">
+              {tBasket('basketFull', { max: MAX_ITEMS })}
+            </p>
+            {/* At-limit disclosure (task 2.2, spec web-application
+                "Tool-limit disclosure"): the same optimization runs behind
+                this comparison as behind the basket, so the cap reason and
+                the group-order alternative reuse the basket's keys. */}
+            <p className="mt-2 text-xs leading-relaxed text-gray-600">
+              {tBasket('capReason', { max: MAX_ITEMS })}
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-gray-700">
+              {tBasket.rich('capGroupOrder', {
+                link: (chunks) => (
+                  <Link
+                    href="/group-order"
+                    className="font-medium text-primary-600 underline hover:text-primary-800"
+                  >
+                    {chunks}
+                  </Link>
+                ),
+              })}
+            </p>
+          </div>
         ) : (
           <>
             <div className="mb-3">
@@ -554,6 +589,21 @@ export default function BasketComparisonSection() {
           <p className="text-sm text-gray-400">{tBasket('emptyBasket')}</p>
         ) : (
           <>
+            {/* Proximity disclosure (task 2.2): remaining capacity is
+                named before the next add silently does nothing. */}
+            {nearCap && (
+              <p
+                data-testid="compare-cap-proximity"
+                className="mb-3 text-xs text-amber-700"
+              >
+                {tBasket('nearCap', {
+                  count: items.length,
+                  max: MAX_ITEMS,
+                  remaining: MAX_ITEMS - items.length,
+                })}
+              </p>
+            )}
+
             {atCapacity && (
               <p className="mb-3 text-xs text-amber-600">
                 {tBasket('maxReached', { max: MAX_ITEMS })}

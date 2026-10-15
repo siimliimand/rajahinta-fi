@@ -9,6 +9,15 @@
  * non-happy paths are the designed empty and error states (rows are
  * never invented). The content stance is asserted too: the table renders
  * only factual cells — no editorial copy is baked into the component.
+ *
+ * Failure honesty (listing-failure-honesty 2.4): each failure class
+ * renders its own state — a 403 the age-gate CTA, a 429 the backoff copy,
+ * the transient family (timeout/server/network) the established
+ * ErrorState — and a failed fetch falls back to the category's persisted
+ * last-good response with its as-of label, never to another category's
+ * rows and never to a corrupt entry. The success-path assertions are the
+ * pre-change ones, unchanged: the fallback work leaves the happy path
+ * byte-identical.
  */
 import React from 'react';
 import { render, screen } from '@testing-library/react';
@@ -18,14 +27,46 @@ import { NextIntlClientProvider } from 'next-intl';
 import ValueRanking from './ValueRanking';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import fiMessages from '@/messages/fi.json';
-import { request } from '@/lib/api';
+import { ApiFetchError, request } from '@/lib/api';
 import type { UnitPriceRankingItem } from '@/lib/types';
 
-vi.mock('@/lib/api', () => ({
-  request: vi.fn(),
-}));
+// The real API client module stays loaded — the component narrows its
+// rejections with `instanceof ApiFetchError` and reads `.failureClass` —
+// only `request` is replaced so each test controls the outcome.
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>();
+  return { ...actual, request: vi.fn() };
+});
+
+// The router-aware navigation module does not load under vitest
+// (documented repo limitation); stub the Link with the plain-anchor
+// double every other suite uses, so the age-gate CTA renders a real <a>.
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 const mockRequest = vi.mocked(request);
+
+/** The component's per-category stale-while-error storage key. */
+function cacheKey(category: string) {
+  return `rajahinta.value-ranking.${category}`;
+}
+
+/**
+ * Seed a category's persisted last-good response the way a previous
+ * successful fetch would have written it.
+ */
+function seedCache(
+  category: string,
+  items: UnitPriceRankingItem[],
+  fetchedAt = '2026-01-15T12:34:00.000Z',
+) {
+  window.localStorage.setItem(
+    cacheKey(category),
+    JSON.stringify({ response: rankingResponse(items), fetchedAt }),
+  );
+}
 
 /**
  * Same Finnish provider as renderWithIntl, but returned so the test can
@@ -69,6 +110,8 @@ function rankingResponse(items: UnitPriceRankingItem[]) {
 
 beforeEach(() => {
   mockRequest.mockReset();
+  // The stale-while-error cache is browser state; isolate every test.
+  window.localStorage.clear();
 });
 
 describe('ValueRanking', () => {
@@ -195,5 +238,155 @@ describe('ValueRanking', () => {
       '/api/v1/unitprice/ranking?category=wine_still',
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+  });
+});
+
+describe('ValueRanking failure honesty (listing-failure-honesty 2.4)', () => {
+  it('renders the age-gate CTA on 403 with no cache, never the backend-down copy', async () => {
+    mockRequest.mockRejectedValue(new ApiFetchError(403, null));
+    renderWithIntl(<ValueRanking category="beer" />);
+
+    // The class-distinct state: the age confirmation affordance with the
+    // localized link onto /age-gate.
+    await screen.findByText('Ikävahvistus tarvitaan');
+    const link = screen.getByRole('link', { name: 'Siirry ikävahvistukseen' });
+    expect(link).toHaveAttribute('href', '/age-gate');
+    // Neither the backend-unavailable copy nor a retry rides a 403 —
+    // a missing confirmation is not an outage.
+    expect(
+      screen.queryByText('Luetteloa ei saatu haettua'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'Taustajärjestelmä ei vastannut. Voit yrittää uudelleen.',
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it('renders the cached table with its as-of label above the age CTA on 403', async () => {
+    seedCache('beer', ROWS);
+    mockRequest.mockRejectedValue(new ApiFetchError(403, null));
+    renderWithIntl(<ValueRanking category="beer" />);
+
+    // The persisted last-good rows stand in above the affordance.
+    await screen.findByRole('table');
+    expect(screen.getByText('Nimi A')).toBeInTheDocument();
+    expect(screen.getByText('Nimi B')).toBeInTheDocument();
+    // Every cached render carries its visible as-of label — the spec
+    // forbids persisted data without one. Year asserted instead of the
+    // whole date: the formatted stamp is timezone-dependent.
+    const label = screen.getByText(/^Andmatiedoilla /);
+    expect(label.textContent).toContain('2026');
+    // Label precedes the affordance (as-of above the CTA in the DOM).
+    const cta = screen.getByText('Ikävahvistus tarvitaan');
+    expect(
+      label.compareDocumentPosition(cta) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('renders backoff copy on 429, and retry recovers the table', async () => {
+    mockRequest
+      .mockRejectedValueOnce(new ApiFetchError(429, null))
+      .mockResolvedValueOnce(rankingResponse(ROWS));
+    renderWithIntl(<ValueRanking category="beer" />);
+
+    // Backoff copy — the surface asks the visitor to retry shortly
+    // instead of claiming a backend failure.
+    await screen.findByText(
+      'Palveluun kohdistuu juuri nyt hyvin paljon pyyntöjä. Yritä uudelleen hetken kuluttua.',
+    );
+    expect(
+      screen.queryByText(
+        'Taustajärjestelmä ei vastannut. Voit yrittää uudelleen.',
+      ),
+    ).not.toBeInTheDocument();
+
+    // The retry affordance re-runs the fetch; recovery renders the table.
+    await userEvent.setup().click(screen.getByRole('button'));
+    await screen.findByRole('table');
+    expect(mockRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('renders the transient state with retry on a 500', async () => {
+    mockRequest.mockRejectedValue(new ApiFetchError(500, null));
+    renderWithIntl(<ValueRanking category="beer" />);
+
+    await screen.findByText('Luetteloa ei saatu haettua');
+    expect(
+      screen.getByText(
+        'Taustajärjestelmä ei vastannut. Voit yrittää uudelleen.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it('renders the transient state for a network-class ApiFetchError', async () => {
+    // The shape transportFailure() produces on a dead wire: status 0,
+    // no body, failureClass network.
+    mockRequest.mockRejectedValue(
+      new ApiFetchError(0, null, null, {
+        failureClass: 'network',
+        message: 'API request failed: Failed to fetch',
+      }),
+    );
+    renderWithIntl(<ValueRanking category="beer" />);
+
+    await screen.findByText('Luetteloa ei saatu haettua');
+    expect(
+      screen.getByText(
+        'Taustajärjestelmä ei vastannut. Voit yrittää uudelleen.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button')).toBeInTheDocument();
+  });
+
+  it('treats a corrupt cache entry as no cache on failure', async () => {
+    // Not parseable JSON: readCachedRanking() must swallow it — the
+    // surface never crashes and never renders a half-entry.
+    window.localStorage.setItem(
+      cacheKey('beer'),
+      '{"response":{"items": broken',
+    );
+    mockRequest.mockRejectedValue(new ApiFetchError(403, null));
+    renderWithIntl(<ValueRanking category="beer" />);
+
+    // The class state renders alone: no rows, no as-of label.
+    await screen.findByText('Ikävahvistus tarvitaan');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Andmatiedoilla /)).not.toBeInTheDocument();
+  });
+
+  it('never serves another category cache: beer rows do not stand in for a wine_still failure', async () => {
+    seedCache('beer', ROWS);
+    mockRequest.mockRejectedValue(new ApiFetchError(500, null));
+    renderWithIntl(<ValueRanking category="wine_still" />);
+
+    // The category is part of the storage key, so the wine_still failure
+    // renders the class state without fabricated rows.
+    await screen.findByText('Luetteloa ei saatu haettua');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nimi A')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Andmatiedoilla /)).not.toBeInTheDocument();
+  });
+
+  it('persists a successful response for the stale-while-error fallback', async () => {
+    const payload = rankingResponse(ROWS);
+    mockRequest.mockResolvedValue(payload);
+    renderWithIntl(<ValueRanking category="beer" />);
+    await screen.findByRole('table');
+
+    // Every success writes the category's entry: the response verbatim
+    // plus a real ISO as-of stamp.
+    const raw = window.localStorage.getItem(cacheKey('beer'));
+    expect(raw).not.toBeNull();
+    const entry = JSON.parse(raw as string) as {
+      response: typeof payload;
+      fetchedAt: string;
+    };
+    expect(entry.response).toEqual(payload);
+    expect(Number.isNaN(new Date(entry.fetchedAt).getTime())).toBe(false);
   });
 });

@@ -395,6 +395,24 @@ describe('AccuracyStat coverage mode (count 0 + coverage block)', () => {
     expect(screen.queryByTestId('accuracy-statistic')).toBeNull();
   });
 
+  // Audit-copy-batch task 1.1: the zero-outcome section states the
+  // publication threshold beneath the coverage figures — the resolved
+  // state is never an indefinite loading indicator, and the share
+  // presentation never renders for a zero outcome.
+  it('renders the publication-threshold copy in the zero-outcome section, not a loading state', async () => {
+    mockedAccuracy.mockResolvedValue(statWithCoverage());
+
+    renderWithIntl(<AccuracyStat variant="section" />);
+    const threshold = await screen.findByTestId('accuracy-threshold');
+
+    expect(threshold).toHaveTextContent(
+      'Tarkkuustilasto julkaistaan, kun käyttäjien raportoimia lopputuloksia on riittävästi.',
+    );
+    // The fetch resolved: the initial loading note is gone.
+    expect(screen.queryByText('Ladataan tarkkuustilastoa…')).toBeNull();
+    expect(screen.queryByTestId('accuracy-statistic')).toBeNull();
+  });
+
   it('keeps the honest empty state when the response carries no coverage block (old response)', async () => {
     mockedAccuracy.mockResolvedValue(globalStat(0, null));
 

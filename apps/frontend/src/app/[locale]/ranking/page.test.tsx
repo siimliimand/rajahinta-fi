@@ -77,6 +77,21 @@ describe('RankingPage server shell (task 2.4)', () => {
     expect(html).toContain('myyjän maksu tai manuaalinen korostus');
   });
 
+  // Audit-copy-batch task 1.1: the accuracy section swapped its empty
+  // state for the publication-threshold copy, and the `#accuracy` id —
+  // the share page's cross-link target — must survive every state
+  // (server shell included).
+  it('keeps the share page #accuracy cross-link anchor in the server HTML', async () => {
+    const messages = (await import('@/messages/fi.json')).default;
+    const html = renderToString(
+      <NextIntlClientProvider locale="fi" messages={messages}>
+        {await RankingPage({ params: Promise.resolve({ locale: 'fi' }) })}
+      </NextIntlClientProvider>,
+    );
+
+    expect(html).toContain('id="accuracy"');
+  });
+
   it('renders the methodology in consumer register with every enforcement fact stated', async () => {
     const messages = (await import('@/messages/fi.json')).default;
     const html = renderToString(
