@@ -1448,7 +1448,12 @@
     "errorTitle": "Luetteloa ei saatu haettua",
     "errorBody": "Taustajärjestelmä ei vastannut. Voit yrittää uudelleen.",
     "emptyTitle": "Ei näytettäviä rivejä",
-    "emptyBody": "Tässä hintaluokassa ei ole yhtään tarjousta, jolle grammahintaa voisi laskea."
+    "emptyBody": "Tässä hintaluokassa ei ole yhtään tarjousta, jolle grammahintaa voisi laskea.",
+    "ageGateCtaTitle": "Ikävahvistus tarvitaan",
+    "ageGateCtaBody": "Tämä hintaluettelo on näkyvissä vain ikävahvistuksen jälkeen.",
+    "ageGateCtaLink": "Siirry ikävahvistukseen",
+    "rateLimitBody": "Palveluun kohdistuu juuri nyt hyvin paljon pyyntöjä. Yritä uudelleen hetken kuluttua.",
+    "staleAsOfLabel": "Andmatiedoilla {date}"
   },
   "SavingsPage": {
     "metaTitle": "Kokonaishinta-ero Alko-viitehintaan",
