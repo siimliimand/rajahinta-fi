@@ -184,6 +184,7 @@ export const ROUTE_CLIENT_NAMESPACES = {
   '/register': ['Auth', 'Register'],
   '/savings': ['Common', 'SavingsPage'],
   '/share/:publicId': ['ConfidenceMeter', 'DisclaimerBanner'],
+  '/tax-changes': ['TaxChangeCalendarPage'],
   '/trip': [
     'Common',
     'ConfidenceMeter',
@@ -193,6 +194,7 @@ export const ROUTE_CLIENT_NAMESPACES = {
     'TripPage',
   ],
   '/value': ['Common', 'ValuePage'],
+  '/veromuutokset': ['TaxChangeCalendarPage'],
   '/what-if': ['Common', 'DisclaimerBanner', 'WhatIfPage'],
 } as const satisfies Record<string, readonly MessageNamespace[]>;
 

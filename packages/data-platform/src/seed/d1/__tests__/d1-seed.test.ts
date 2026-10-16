@@ -186,6 +186,7 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
       'source-governance.d1.sql',
       'consumption-norms.d1.sql',
       'carrier-box-types.d1.sql',
+      'calendar-events.d1.sql',
     ]);
 
     const expectations = buildExpectations();
@@ -474,6 +475,8 @@ describe('assertVerificationRow count semantics', () => {
       staging_reviews_total: expectations.stagingReviews,
       consumption_norms_total: expectations.consumptionNormsRows,
       carrier_box_types_total: expectations.carrierBoxTypesRows,
+      calendar_events_total: expectations.calendarEventsTotal,
+      spot_fi_excise_change_rows: expectations.spotCalendarEventRows.expected,
       fts_indexed_products: expectations.ftsIndexedProducts,
       ...overrides,
     };

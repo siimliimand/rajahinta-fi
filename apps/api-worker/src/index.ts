@@ -44,6 +44,7 @@ import { registerEventCalcRoutes } from './routes/event-calc.routes';
 import { registerTripFeasibilityRoutes } from './routes/trip-feasibility.routes';
 import { registerTripRoutes } from './routes/trip.routes';
 import { registerAllowancesRoutes } from './routes/allowances.routes';
+import { registerCalendarRoutes } from './routes/calendar.routes';
 import { registerSavingsRoutes } from './routes/savings.routes';
 import { registerBenchmarksRoutes } from './routes/benchmarks.routes';
 import { registerPriceContextRoutes } from './routes/price-context.routes';
@@ -166,6 +167,10 @@ export function createApp(): Hono<AppEnv> {
   registerTripFeasibilityRoutes(app);
   registerTripRoutes(app);
   registerAllowancesRoutes(app);
+  // Tax-change calendar public reads (tax-change-calendar 3.2) — the
+  // allowances chain (age gate + DEFAULT limiter) lives in the route
+  // module; see calendar.routes.ts.
+  registerCalendarRoutes(app);
   registerSavingsRoutes(app);
   registerBenchmarksRoutes(app);
   registerPriceContextRoutes(app);

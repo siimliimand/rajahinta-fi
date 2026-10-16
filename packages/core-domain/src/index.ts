@@ -625,6 +625,37 @@ export type {
 } from './grouporder/grouporder.types';
 
 // ---------------------------------------------------------------------------
+// Tax-change calendar — sourced annual rhythm of price changes
+// (pure, display-only; spec tax-change-calendar, task 2.1)
+// ---------------------------------------------------------------------------
+
+export {
+  findNextCalendarEvent,
+  assertValidCalendarEvent,
+  compareCalendarEvents,
+  sortCalendarEvents,
+  resolvePeriodStart,
+  resolveWindowEnd,
+  resolveExpectedWindow,
+  selectRhythmDisclaimer,
+  CALENDAR_RHYTHM_DISCLAIMER_FI,
+  CALENDAR_RHYTHM_DISCLAIMER_EN,
+  CALENDAR_EVENT_TYPES,
+  CALENDAR_EVENT_STATUSES,
+  CALENDAR_EVENT_REPOSITORY_PORT,
+  InvalidCalendarInputError,
+} from './calendar/index';
+export type {
+  CalendarEventType,
+  CalendarEventStatus,
+  CalendarEvent,
+  CalendarLanguage,
+  NextCalendarEvent,
+  ResolvedExpectedWindow,
+  ICalendarEventRepositoryPort,
+} from './calendar/index';
+
+// ---------------------------------------------------------------------------
 // Ranking & Sorting — objective sort orders for beverage price comparison
 // ---------------------------------------------------------------------------
 

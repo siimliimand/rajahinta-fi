@@ -2672,6 +2672,134 @@ export const merchantReliabilityAggregates = sqliteTable(
 );
 
 /**
+ * Calendar event-type value set — the closed vocabulary of price-change
+ * rhythm facts (task 1.2, change tax-change-calendar): Finnish and
+ * Estonian excise steps, Alko's twice-yearly price lists, Verohallinto's
+ * next-year table publication, and the government rate-decision window.
+ * Exported so the schema CHECK and the persistence-boundary validator
+ * read ONE definition and cannot drift (the PRODUCT_CATEGORIES
+ * precedent).
+ */
+export const CALENDAR_EVENT_TYPES = [
+  'FI_EXCISE_CHANGE',
+  'EE_EXCISE_CHANGE',
+  'ALKO_PRICE_LIST',
+  'TAX_TABLE_PUBLICATION',
+  'RATE_DECISION',
+] as const;
+
+export type CalendarEventType = (typeof CALENDAR_EVENT_TYPES)[number];
+
+/**
+ * Calendar event status — the honest-framing split (design: "Status
+ * CONFIRMED | EXPECTED + precision split"): CONFIRMED rows are exact
+ * dated facts carrying occurrence_date; EXPECTED rows are the annual
+ * rhythm and carry expected_window. Renderers may never invent
+ * precision the row does not carry.
+ */
+export const CALENDAR_EVENT_STATUSES = ['CONFIRMED', 'EXPECTED'] as const;
+
+export type CalendarEventStatus = (typeof CALENDAR_EVENT_STATUSES)[number];
+
+/**
+ * SQL IN-list fragments rendered from the exported value sets — raw text
+ * because a CHECK expression cannot carry bind parameters (the
+ * PRODUCT_CATEGORY_VALUES precedent).
+ */
+const CALENDAR_EVENT_TYPE_VALUES = sql.raw(
+  `(${CALENDAR_EVENT_TYPES.map((t) => `'${t}'`).join(', ')})`,
+);
+const CALENDAR_EVENT_STATUS_VALUES = sql.raw(
+  `(${CALENDAR_EVENT_STATUSES.map((s) => `'${s}'`).join(', ')})`,
+);
+
+/**
+ * Tax-change calendar events — the price-change rhythm as sourced data
+ * (task 1.2, change tax-change-calendar; specs: tax-change-calendar
+ * "Calendar events as closed-vocabulary sourced data").
+ *
+ * One row per event the site can point at when prices change: the
+ * Finnish and Estonian excise steps, Alko's semi-annual price lists,
+ * Verohallinto's year-end table publication, and the 2027+ government
+ * rate-decision window. Rhythm facts are NOT tax rates — they stay out
+ * of tax_rules so the excise engine's gap/overlap-validated timeline is
+ * never polluted with undated windows (design decision: new table
+ * instead of extending taxRules).
+ *
+ * The status/precision split makes honest framing representable in
+ * data: a CONFIRMED row carries its exact occurrence_date, an EXPECTED
+ * row carries only an expected_window at month-or-quarter precision —
+ * and the status_period CHECK makes any row claiming both (or neither)
+ * unrepresentable at rest, so a renderer cannot invent precision the
+ * row does not carry. The persistence-boundary validator
+ * (repositories/calendar-event-validator.ts) re-states the same
+ * contract with errors naming the valid values; the CHECK is the
+ * last-line guarantee for raw SQL paths.
+ *
+ * Sourced rows only: source_url is NOT NULL — no unsourced event can
+ * exist. Locale texts are NOT NULL in both languages because the
+ * surface is Finnish-default with an English locale; a missing-locale
+ * row would render a hole mid-timeline.
+ */
+export const calendarEvents = sqliteTable(
+  'calendar_events',
+  {
+    id: integer('id').primaryKey(),
+    /** Calendar year the event belongs to — the year-range read key. */
+    year: integer('year').notNull(),
+    /** Closed rhythm vocabulary — one of {@link CALENDAR_EVENT_TYPES}. */
+    eventType: text('event_type', { length: 32 }).notNull(),
+    /** CONFIRMED (dated fact) or EXPECTED (annual rhythm window). */
+    status: text('status', { length: 16 }).notNull(),
+    /**
+     * CONFIRMED only: the exact occurrence date, ISO YYYY-MM-DD TEXT
+     * (the house date shape). Null for EXPECTED rows — a rhythm window
+     * must not claim day precision.
+     */
+    occurrenceDate: text('occurrence_date'),
+    /**
+     * EXPECTED only: the expected window at month-or-quarter precision,
+     * 'YYYY-MM' (e.g. '2026-09') or 'YYYY-Qn' (e.g. '2027-Q4'). Null for
+     * CONFIRMED rows.
+     */
+    expectedWindow: text('expected_window', { length: 8 }),
+    /** Finnish title — the default-locale surface text. */
+    titleFi: text('title_fi', { length: 256 }).notNull(),
+    /** English title — the en-locale surface text. */
+    titleEn: text('title_en', { length: 256 }).notNull(),
+    /** Finnish summary — the default-locale surface text. */
+    summaryFi: text('summary_fi').notNull(),
+    /** English summary — the en-locale surface text. */
+    summaryEn: text('summary_en').notNull(),
+    /** Authoritative publication URL — no unsourced rows (the tax_rules.official_source discipline). */
+    sourceUrl: text('source_url', { length: 512 }).notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // Serves both query paths with one composite index: the year-range
+    // read filters on the leading year column, and the next-event lookup
+    // scans the period columns in order (occurrence_date for CONFIRMED
+    // rows, expected_window for EXPECTED rows). The table is tiny; the
+    // index exists so the homepage widget's per-request read stays a
+    // single indexed query (design).
+    index('calendar_events_year_period_idx').on(
+      table.year,
+      table.occurrenceDate,
+      table.expectedWindow,
+    ),
+    check('calendar_events_event_type_check', sql`${table.eventType} IN ${CALENDAR_EVENT_TYPE_VALUES}`),
+    check('calendar_events_status_check', sql`${table.status} IN ${CALENDAR_EVENT_STATUS_VALUES}`),
+    // The status/precision coupling: exactly one of occurrence_date /
+    // expected_window is set, and it must match the status. Any other
+    // combination is unrepresentable at rest.
+    check(
+      'calendar_events_status_period_check',
+      sql`(${table.status} = 'CONFIRMED' AND ${table.occurrenceDate} IS NOT NULL AND ${table.expectedWindow} IS NULL) OR (${table.status} = 'EXPECTED' AND ${table.occurrenceDate} IS NULL AND ${table.expectedWindow} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -2722,4 +2850,5 @@ export const d1Schema = {
   digestNotifications,
   ferryPriceObservations,
   merchantReliabilityAggregates,
+  calendarEvents,
 };

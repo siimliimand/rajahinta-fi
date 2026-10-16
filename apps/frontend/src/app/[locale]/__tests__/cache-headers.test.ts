@@ -74,6 +74,8 @@
  *                        wins the header. `next start` shape only,
  *                        OpenNext caveat as everywhere)
  *   /savings             … (searchParams ?method)
+ *   /veromuutokset and   … (searchParams ?year — the timeline year is
+ *   /en/tax-changes         URL state; tax-change-calendar 4.4)
  *
  * The ISR shape is the shared-cache contract: `s-maxage` equals the
  * MINIMUM revalidate window across the route's segment tree — the
@@ -443,7 +445,11 @@ describe('cache-header contract (first-impression-pass 2.2)', () => {
         'contact/page.tsx',
         'products/page.tsx',
         'savings/page.tsx',
+        // The calendar timeline year (?year=) is URL state too
+        // (tax-change-calendar 4.4) — both physical variants:
+        'tax-changes/page.tsx',
         'value/page.tsx',
+        'veromuutokset/page.tsx',
         // Dynamic segments with no route-level ISR window (per-request
         // regardless of searchParams):
         '[...rest]/page.tsx',

@@ -100,3 +100,9 @@ export { ExciseDeclarationService } from '../../../../packages/core-domain/src/d
 
 // History — TaxChangeAttributionService is registered above with the other
 // route-port services.
+
+// Calendar — price-change calendar facts (change tax-change-calendar).
+// The D1 repository's ordering/next-event queries are delegated to these
+// pure helpers; type-only calendar imports are erased and not bridged.
+export { findNextCalendarEvent } from '../../../../packages/core-domain/src/calendar/calendar';
+export { sortCalendarEvents } from '../../../../packages/core-domain/src/calendar/ordering';

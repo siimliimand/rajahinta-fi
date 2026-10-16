@@ -409,6 +409,30 @@ export {
 } from './seed/traveller-allowances.seed';
 
 // ---------------------------------------------------------------------------
+// Tax-change calendar — D1-only rhythm-fact table (task 1.2, change
+// tax-change-calendar). Value sets live in d1/schema next to the CHECKs
+// they back (PRODUCT_CATEGORIES precedent); the persistence-boundary
+// validator is standalone (effective-range-validator precedent) so seed,
+// repository, and ops console share one contract
+// ---------------------------------------------------------------------------
+
+export {
+  CALENDAR_EVENT_TYPES,
+  CALENDAR_EVENT_STATUSES,
+  calendarEvents,
+  type CalendarEventType,
+  type CalendarEventStatus,
+} from './d1/schema';
+export {
+  validateCalendarEvent,
+  type CalendarEventInput,
+  type ConfirmedCalendarEvent,
+  type ExpectedCalendarEvent,
+  type ValidatedCalendarEvent,
+} from './repositories/calendar-event-validator';
+export { DrizzleCalendarEventRepository } from './repositories/calendar-event.repository';
+
+// ---------------------------------------------------------------------------
 // Drizzle connection provider
 // ---------------------------------------------------------------------------
 

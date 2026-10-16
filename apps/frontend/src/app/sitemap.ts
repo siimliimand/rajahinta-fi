@@ -268,6 +268,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       });
     }
 
+    // The tax-change calendar pair (tax-change-calendar task 4.4): its
+    // two physical folders sit deliberately outside the localized-
+    // pathnames vocabulary, so the pair is advertised by hand in the
+    // exact shape the pages' own canonical/hreflang metadata renders
+    // (calendar-page design D6): fi serves /veromuutokset bare, en
+    // /en/tax-changes; the pairing below adds x-default → the bare fi
+    // URL. The year query stays out — the timeline is one resource per
+    // locale, the year is pagination-like state.
+    advertise('static:/veromuutokset', locale, {
+      url: locale === 'en' ? `${SITE_URL}/en/tax-changes` : `${SITE_URL}/veromuutokset`,
+      changeFrequency: 'weekly',
+      priority: 0.7,
+    });
+
     // Catalog category views (product-catalog task 3.2) — page-1 state
     // only, matching each state's canonical URL. Page ≥ 2 states stay
     // out of the sitemap: an infinite parameter space with no uniquely
