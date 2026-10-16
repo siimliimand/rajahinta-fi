@@ -33,8 +33,8 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GET as indexGET } from './sitemap.xml/route';
-import { GET as treeGET } from './sitemaps/[tree]/route';
+import { GET as indexGET, revalidate as indexRevalidate } from './sitemap.xml/route';
+import { GET as treeGET, revalidate as treeRevalidate } from './sitemaps/[tree]/route';
 import { routing } from '@/i18n/routing';
 import { PRODUCT_CHUNK_SIZE } from '@/lib/sitemap-xml';
 
@@ -694,6 +694,15 @@ describe('sitemap index tree (task 2.2)', () => {
     vi.unstubAllGlobals();
   });
 
+  it('the index and every child cache with ISR revalidate 900 seconds', () => {
+    // Spec: Sitemap index tree — "the index and every child SHALL cache
+    // with ISR revalidate 900 seconds". Both route handlers export the
+    // segment config; pin the exported value (a silent drift to another
+    // window would desynchronize the advertised set from the served tree).
+    expect(indexRevalidate).toBe(900);
+    expect(treeRevalidate).toBe(900);
+  });
+
   it('every referenced child serves 200 application/xml', async () => {
     stubEditorialContent({
       lists: ['jouluset'],
@@ -1012,6 +1021,31 @@ describe('products-N paired chunks (task 2.3)', () => {
     const first = await (await fetchTree('products-0')).text();
     const second = await (await fetchTree('products-0')).text();
     expect(second).toBe(first);
+  });
+
+  it('catalog growth keeps existing chunks frozen — new ids land in the tail chunk (D3)', async () => {
+    // Spec: Chunk shape is stable — ids are monotonic, so growth never
+    // re-members an existing chunk; new products land in the tail chunk
+    // and the chunk count moves only at the 5,000 boundary.
+    const fiIds = (entries: ParsedUrlEntry[]): number[] =>
+      entries
+        .filter((entry) => !new URL(entry.url).pathname.startsWith('/en/'))
+        .map((entry) => Number(new URL(entry.url).pathname.split('/').pop()));
+
+    stubProductEnumeration(productCatalog(5_001));
+    const before = fiIds((await treeDocument('products-0')).entries);
+    expect(before).toHaveLength(5_000);
+
+    stubProductEnumeration(productCatalog(5_400));
+    // Chunk 0 keeps its exact membership after the growth …
+    expect(fiIds((await treeDocument('products-0')).entries)).toEqual(before);
+    // … the chunk count is unchanged (5,400 has not crossed 10,000) …
+    const children = locs(await (await fetchIndex()).text());
+    expect(children).toEqual([TREE.pages, TREE.products(0), TREE.products(1)]);
+    // … and the new ids sit in the tail chunk.
+    expect(fiIds((await treeDocument('products-1')).entries)).toEqual(
+      Array.from({ length: 400 }, (_, index) => 5_001 + index),
+    );
   });
 
   it('reads the id-ordered offset slice: chunk N requests offset N·5,000 at the 5,000 limit (D2/D3)', async () => {
