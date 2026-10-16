@@ -87,6 +87,7 @@ vi.mock('../components/ProductDupesPanel', () => ({ default: () => null }));
 vi.mock('../components/ProductPriceContextLine', () => ({
   default: () => null,
 }));
+vi.mock('../components/ProductFaqPanel', () => ({ default: () => null }));
 
 const mockedGetServerProductDetail = vi.mocked(getServerProductDetail);
 

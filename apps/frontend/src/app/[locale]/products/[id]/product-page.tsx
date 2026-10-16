@@ -81,6 +81,14 @@
  * scripts through this shared module; the ISR segment config and cache
  * windows are untouched.
  *
+ * Deterministic Q&A (seo-aeo-agent-surfaces 2.1): a third streamed
+ * section, ProductFaqPanel, composes two to three factual answers from
+ * the payloads this module already fetches — template-composed, never
+ * generated. It receives the same still-pending context promise as the
+ * context line and awaits it inside its own Suspense boundary; a null
+ * payload drops the price question, an attribute-less product drops its
+ * question, and a block with zero pairs renders nothing.
+ *
  * @module ProductPage
  */
 
@@ -112,6 +120,7 @@ import { SellingDistanceBadge } from '../../compare/components/SellingDistanceBa
 import ProductAlertAction from './components/ProductAlertAction';
 import ProductFavoriteAction from './components/ProductFavoriteAction';
 import ProductDupesPanel from './components/ProductDupesPanel';
+import ProductFaqPanel from './components/ProductFaqPanel';
 import ProductPriceContextLine from './components/ProductPriceContextLine';
 import PriceHistoryChart from './components/PriceHistoryChart';
 
@@ -606,6 +615,27 @@ export default async function ProductPage({
           nothing — absent from the HTML, never an empty shell. ── */}
       <React.Suspense fallback={null}>
         <ProductPriceContextLine payload={contextPromise} locale={locale} />
+      </React.Suspense>
+
+      {/* ── Deterministic Q&A block (seo-aeo-agent-surfaces 2.1, design
+          D4) — template-composed factual answers, no LLM: the price pair
+          reads the price-context payload's current-best selection (the
+          same figure and term the context line above renders, so the two
+          cannot contradict), the attribute pairs read the master data
+          through the shared formatters. The still-pending context promise
+          is awaited inside this boundary (the 4.1 hand-down pattern), so
+          the block streams after the shell; a null payload drops the
+          price pair and a zero-pair block renders nothing — absent, never
+          an empty shell. The pairs compose in the panel's exported pure
+          composeProductFaqPairs, which the FAQPage JSON-LD (task 2.2)
+          must call with the same inputs so the schema mirrors the visible
+          block one-to-one. ── */}
+      <React.Suspense fallback={null}>
+        <ProductFaqPanel
+          product={product}
+          payload={contextPromise}
+          locale={locale}
+        />
       </React.Suspense>
 
       {/* ── Price history (task 5.1) — server-fetched series, client
