@@ -74,8 +74,12 @@ describe('cron routing table (task 4.3 — BullMQ repeat-schedule parity)', () =
     ]);
   });
 
+  it('routes the annual January calendar skeleton (task 3.1)', () => {
+    expect(handlerNames('0 0 1 1 *')).toEqual(['calendar-skeleton']);
+  });
+
   it('routes nothing for unknown patterns', () => {
-    expect(handlerNames('0 0 1 1 *')).toEqual([]);
+    expect(handlerNames('15 23 29 2 *')).toEqual([]);
   });
 
   it('stays in parity with wrangler.jsonc triggers.crons', () => {
@@ -141,7 +145,7 @@ describe('dispatchScheduled — entry wiring', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const waitUntil = vi.fn();
     dispatchScheduled(
-      { cron: '0 0 1 1 *' } as unknown as ScheduledController,
+      { cron: '15 23 29 2 *' } as unknown as ScheduledController,
       {} as Env,
       { waitUntil } as unknown as ExecutionContext,
     );

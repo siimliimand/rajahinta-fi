@@ -197,6 +197,12 @@
 //                 gated by the PREFERENCE_DIGEST_ENABLED var (see the vars
 //                 blocks) — unset/false → the handler no-ops writing
 //                 nothing (spec: disabled environment writes nothing).
+//   0 0 1 1 *     Alko rhythm-skeleton generation — annual, 1 January
+//                 00:00 UTC (task 3.1, change calendar-event-automation;
+//                 src/cron/calendar-skeleton.ts): generates the year's two
+//                 ALKO_PRICE_LIST EXPECTED rows through the pure
+//                 core-domain generator, skipping any year that already
+//                 carries an Alko row (idempotent, re-runnable).
 //
 // TIMEZONE NOTE: wrangler crons are UTC-only, so the two daily jobs
 // fire at their BullMQ CLOCK HOURS in UTC, i.e. two hours earlier than
@@ -205,6 +211,12 @@
 // is immaterial; the deviation is deliberate and documented rather
 // than approximated with a shifted UTC hour (no single UTC time maps
 // to a fixed Helsinki hour across DST).
+//
+// The January skeleton cron is UTC-anchored by design, not by deviation:
+// 1 January 00:00 UTC is 02:00 Helsinki on the year's first day, so the
+// skeleton for the new year exists from the year's first hours (the
+// calendar's year read keys on the row's `year` column, not the wall
+// clock).
 "triggers": {
     "crons": [
       "0 * * * *",
@@ -213,7 +225,8 @@
       "0 2 * * *",
       "30 3 * * *",
       "0 5 1 * *",
-      "0 6 * * 1"
+      "0 6 * * 1",
+      "0 0 1 1 *"
     ]
   },
   // Observability (task 6.2, design D8): Workers Logs carry the log
@@ -402,6 +415,7 @@
       //   30 3 * * *    retention sweep
       //   0 5 1 * *     fransberg refresh (monthly)
       //   0 6 * * 1     preference digest (also var-gated)
+      //   0 0 1 1 *     calendar skeleton (annual, January)
       // Production keeps the full top-level array.
       "triggers": {
         "crons": []
