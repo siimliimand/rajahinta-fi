@@ -1546,3 +1546,241 @@ decision of record, not an omission.
   curated-rate-refresh cron picks the rows up and unchanged-skips
   thereafter.
 
+---
+
+## 11. Cloudflare WebMCP toggle (Agent Readiness > WebMCP)
+
+Enablement and verification for the site's WebMCP exposure (change
+`seo-aeo-agent-surfaces`, design D6/D7). WebMCP is the W3C proposal that
+lets a web page register tools via `document.modelContext` so an
+in-browser agent can call them: ChatGPT desktop's built-in browser has
+called page-registered tools since 2025-08-25, and Chrome/Edge carry an
+origin trial through 2027-03. Cloudflare ships it as a dashboard
+toggle: with **Agent Readiness > WebMCP** enabled for a domain, the
+edge injects a same-origin bridge script into the site's HTML, and the
+pack's Site MCP Server definition forwards agent tool traffic to the
+site's own `/mcp` endpoint. On this platform that endpoint is the
+api-worker's MCP surface — the closed, strictly read-only tool set
+(`search_products`, `get_product`, `calculate_landed_cost`) behind the
+house rate limit (profile `MCP`, 30/min per IP) and the age gate. The
+toggle is pure edge configuration: nothing is deployed at the origin to
+support it, and a browser without WebMCP support ignores the bridge —
+the page degrades to plain HTML (design Risks).
+
+Two operator boundaries frame this section. The dashboard toggle itself
+is an explicit operator step — deploys never flip it. And the house
+no-feature-flags rule (design D7) is unaffected: rollback for the
+worker is `wrangler rollback` (§11.4), rollback for the bridge is the
+toggle.
+
+Every artifact this section references is in the repository:
+
+| Artifact | Path |
+|---|---|
+| `/mcp` endpoint (streamable-HTTP JSON, POST only) | `apps/api-worker/src/mcp/mcp.routes.ts` |
+| Closed tool set (three tools, versioned in code) | `apps/api-worker/src/mcp/tools.ts` |
+| Age gate (403 `AGE_GATE_REQUIRED` envelope) | `apps/api-worker/src/middleware/age-gate.ts` |
+| Rate-limit profiles (`MCP`: 30/min, `Retry-After`) | `apps/api-worker/src/middleware/rate-limit.ts` |
+| Endpoint and boundary tests | `apps/api-worker/src/mcp/__tests__/` |
+
+Roles: the **ops lead** flips the dashboard toggle per environment and
+executes the staging verification; the **platform engineer** owns the
+`/mcp` endpoint.
+
+### 11.1 What the toggle changes (and what it does not)
+
+- The bridge is injected into the HTML responses of the domain the
+  toggle is enabled for — the pages agents browse (production:
+  `rajahinta.fi`; staging: the staging frontend host). The Site MCP
+  Server pack's MCP server URL (`data-mcp-url`) defaults to the
+  same-origin path `/mcp`; on this deployment the endpoint lives on the
+  API Worker origin, so point the pack at the API origin explicitly
+  (§11.2).
+- The `/mcp` endpoint itself is live whether or not the toggle is on —
+  it is a public API surface exactly like the routes. The toggle only
+  decides whether the site's pages carry the bridge that calls it.
+- The age gate applies to EVERY MCP method (`initialize`, `tools/list`,
+  `tools/call` alike): an unconfirmed caller gets the contract gate
+  error, never tool metadata or figures. A checklist step that lists
+  tools must therefore send a confirmation token.
+- Rate limiting runs before the gate, and every POST to `/mcp`
+  consumes the 30/min budget — including requests the gate answers
+  with 403.
+
+### 11.2 Enabling the toggle (staging first, then production)
+
+Cloudflare dashboard → the domain serving the site's HTML → **Agent
+Readiness > WebMCP** → enable, with the **Site MCP Server** pack. Set
+the pack's MCP server URL (`data-mcp-url`) to the API origin's
+endpoint:
+
+| Environment | `data-mcp-url` |
+|---|---|
+| Staging | `$STAGING_API_URL/mcp` |
+| Production | `https://api.rajahinta.fi/mcp` |
+
+The same-origin `/mcp` default fits sites that serve their own MCP
+endpoint from the pages' origin; here the HTML and `/mcp` live on
+different origins (frontend Worker vs api-worker), so the absolute URL
+above is the value to enter. Nothing is deployed at the origin: the
+endpoint shipped with the api-worker (change `seo-aeo-agent-surfaces`),
+and the toggle plus pack are edge configuration only. Browser-side
+cross-origin tool calls from the bridge are covered by the API's
+existing CORS configuration — the site origin must be among the
+`CORS_ORIGIN` entries, which it already is wherever the frontend's
+browser-side API client works (same origin list).
+
+Enable staging first, verify per §11.3, then repeat in production. The
+production enablement is a deliberate act — record who, when, and for
+which domain in the change notes or an ops note. If the dashboard does
+not offer the toggle for a given host, that environment's bridge check
+(§11.3 step 1) is not applicable; the API-side checks (steps 2–7) stand
+either way, because `/mcp` does not depend on the toggle.
+
+### 11.3 Staging verification checklist
+
+Every step is an unauthenticated curl against the staging origins —
+`$STAGING_API_URL` as used throughout this runbook and the staging
+frontend host `https://rajahinta-frontend-staging.siim-liimand.workers.dev`
+(`$STAGING_SITE_URL` below). No secrets involved: `/mcp` is a public
+surface whose only credential is the age-confirmation token, sent as
+the `x-age-confirmed` header (any non-empty token passes Phase 1's
+simple confirmation; the `age_confirmed` cookie is the equivalent).
+
+1. **Bridge injected.** Fetch the site's HTML with the toggle off (or
+   before enabling it), then with it on:
+
+   ```bash
+   curl -s "$STAGING_SITE_URL/" | grep -io 'mcp' | head -1
+   ```
+
+   Expected: the toggle-off fetch has no `mcp`-referencing script tag;
+   the toggle-on fetch carries one that the off-fetch does not (diff
+   the two responses if in doubt). That delta IS the injected bridge —
+   nothing else about the served HTML changes.
+
+2. **Unconfirmed handshake gets the gate.** POST `initialize` without a
+   confirmation token:
+
+   ```bash
+   curl -s -X POST "$STAGING_API_URL/mcp" \
+     -H "Content-Type: application/json" \
+     -H "Accept: application/json, text/event-stream" \
+     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"runbook-check","version":"0"}}}' \
+     -w "\n%{http_code}\n"
+   ```
+
+   Expected: HTTP 403 with the house gate envelope — no server
+   metadata, no tools:
+
+   ```json
+   {"statusCode":403,"message":"Age confirmation required. Please confirm your age via the age-gate prompt.","error":"Forbidden","code":"AGE_GATE_REQUIRED","timestamp":"…","path":"/mcp"}
+   ```
+
+   `tools/list` and `tools/call` without the token return the same 403
+   — the gate is method-agnostic.
+
+3. **Confirmed handshake initializes.** Repeat the step-2 POST with
+   `-H "x-age-confirmed: 1"` added.
+
+   Expected: HTTP 200 with a JSON-RPC result whose `serverInfo.name` is
+   `rajahinta-api` (version `1.0.0`). Optionally follow with the
+   `notifications/initialized` notification (no `id`): the stateless
+   surface answers 202 and stores no session.
+
+4. **Tools discoverable — exactly the closed set.** With the
+   confirmation header still set, POST `tools/list`:
+
+   ```bash
+   curl -s -X POST "$STAGING_API_URL/mcp" \
+     -H "Content-Type: application/json" \
+     -H "Accept: application/json, text/event-stream" \
+     -H "x-age-confirmed: 1" \
+     -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+   ```
+
+   Expected: HTTP 200 and `result.tools` naming EXACTLY
+   `search_products`, `get_product`, `calculate_landed_cost`, each with
+   an `object` input schema — nothing else.
+
+5. **The gate, not figures.** POST a `tools/call` for `get_product`
+   WITHOUT the confirmation header:
+
+   ```bash
+   curl -s -X POST "$STAGING_API_URL/mcp" \
+     -H "Content-Type: application/json" \
+     -H "Accept: application/json, text/event-stream" \
+     -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_product","arguments":{"id":1}}}' \
+     -w "\n%{http_code}\n"
+   ```
+
+   Expected: HTTP 403, `code: AGE_GATE_REQUIRED` (the step-2 envelope),
+   and no figures anywhere in the body — no prices, no cost fields.
+   Repeating the call WITH the header returns a tool result instead of
+   the gate: the page-equivalent public payload for an existing product
+   id (substitute any id from the staging catalog if `1` is absent) —
+   the confirmation token is the only difference between the two calls.
+
+6. **Unknown tool stays a contract error.** With the header, call a
+   name outside the closed set (e.g. `"name": "fetch_account"`).
+
+   Expected: HTTP 200 with an in-band JSON-RPC error — `error.code`
+   `-32602` — whose message names the valid tools.
+
+7. **Rate limit — the 31st call in a minute 429s.** The `MCP` profile
+   allows 30 requests per rolling 60 s per IP, and every POST counts,
+   including the 403s of steps 2 and 5. Wait out the window, then fire
+   31:
+
+   ```bash
+   for i in $(seq 1 31); do
+     curl -s -o /dev/null -w "%{http_code}\n" -X POST "$STAGING_API_URL/mcp" \
+       -H "Content-Type: application/json" \
+       -H "Accept: application/json, text/event-stream" \
+       -H "x-age-confirmed: 1" \
+       -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+   done
+   ```
+
+   Expected: thirty `200` lines, then one `429`. The 31st response
+   carries the `Retry-After` header (seconds) and the house envelope:
+
+   ```json
+   {"statusCode":429,"message":"Rate limit exceeded. Try again in <N>s.","error":"TooManyRequests","retryAfterSeconds":<N>,"timestamp":"…","path":"/mcp"}
+   ```
+
+   The window clears on its own; no cleanup is needed.
+
+Record the verified-at timestamp and observed statuses in the change
+notes or an ops note — filled by the operator only, never pre-filled.
+
+### 11.4 Rollback
+
+Two independent switches, used for whatever is being rolled back:
+
+- **Bridge off (the toggle).** Dashboard → Agent Readiness > WebMCP →
+  disable for the domain. The next HTML responses carry no bridge
+  script (verify with the §11.3 step-1 pair of fetches). `/mcp` itself
+  stays live — it is a public API surface independent of the bridge.
+- **Worker rollback.** `wrangler rollback` in `apps/api-worker` for the
+  environment (pass the `--env` as with every command in this runbook;
+  design D7's house rollback path — production deploys themselves stay
+  behind the gated pipeline, §9.7). `/mcp` reverts with the worker, and
+  clients see the house 404 envelope.
+
+Either order is safe. A toggle-only rollback leaves the API surface up
+(correct — it is spec'd independently of the bridge); a
+worker-rollback-only leaves pages bridge-enabled against a 404
+endpoint, where the bridge simply degrades to nothing.
+
+### 11.5 Scope guard — what this surface must never grow
+
+The tool set is closed and read-only by owner decision (design D5/D7,
+spec `agent-tool-surface`): exactly `search_products`, `get_product`,
+`calculate_landed_cost`; every response derivable from crawler-visible
+public data; no write tools, no account tools, no PII, no bypass of the
+age gate or the rate limit. Any growth — a fourth tool, a parameter
+exposing session or account context, offer-grade data — requires an
+owner decision and a spec change first. The WebMCP toggle does not
+change this: it only carries the existing endpoint to browsers.
+
