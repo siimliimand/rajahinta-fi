@@ -38,6 +38,15 @@
  * informativeness gate stored quarantined, surfaced with the raw feed
  * name, the stripped annotation, and the merchant/freshness facts.
  *
+ * Task 4.1 (change calendar-event-automation) adds the calendar event
+ * candidates queue — the source-watcher's review path: the PENDING
+ * worklist, accept (operator-chosen type/status/date-or-window through
+ * the pure candidate state machine + the persistence-boundary event
+ * validator + the calendar-events section's one INSERT; candidate
+ * marked ACCEPTED), and reject (terminal REJECTED, row retained so the
+ * URL keeps deduplicating). Candidates are console-only data — the
+ * public calendar endpoints read calendar_events and never candidates.
+ *
  * EVERY mutating action writes an append-only D1 `audit_events` row via
  * the task-2.5 D1AuditEventRepository (WorkerAuditService).
  *
@@ -132,6 +141,15 @@ import {
 } from '../../../../packages/data-platform/src/repositories/calendar-event-validator';
 import { DrizzleCalendarEventRepository } from '../../../../packages/data-platform/src/repositories/calendar-event.repository';
 import { calendarEventBody } from './calendar.routes';
+import {
+  acceptCandidate,
+  rejectCandidate,
+  InvalidCandidateTransitionError,
+  type CalendarCandidateAcceptanceForm,
+  type CalendarEventCandidate,
+} from '../../../../packages/core-domain/src/calendar/calendar.candidate';
+import { InvalidCalendarInputError } from '../../../../packages/core-domain/src/calendar/calendar.types';
+import { D1CalendarCandidateRepository } from '../adapters/d1-calendar-candidate.repository';
 
 // ---------------------------------------------------------------------------
 // Shared validation (imperative-operator checks, controller parity)
@@ -2879,26 +2897,29 @@ async function listCalendarEvents(c: Context<AppEnv>): Promise<Response> {
   });
 }
 
-async function createCalendarEvent(c: Context<AppEnv>): Promise<Response> {
-  const dto = await readBody(c);
-  const actor = requireOperator(dto);
-  const validated = validateConsoleCalendarEvent(dto);
-
-  // Autoassigned id beyond every existing row (the seed's documented
-  // contract: ops-created rows live outside the seed's id range and are
-  // never touched by re-seeding). Single-operator console — no allocation
-  // race to defend against.
-  const head = await c.env.DB.prepare(
-    'SELECT MAX(id) AS max_id FROM calendar_events',
-  ).first<{ max_id: number | null }>();
+/** The calendar-events section's insert path — also the accept-a-candidate
+ * event creation (task 4.1): autoassigned id beyond every existing row
+ * (the seed's documented contract: ops-created rows live outside the
+ * seed's id range and are never touched by re-seeding; single-operator
+ * console — no allocation race to defend against), validated content
+ * only. Every event write the console performs funnels through here so
+ * there is exactly one INSERT into the public table. */
+async function insertCalendarEventRow(
+  d1: D1DatabaseLike,
+  validated: ValidatedCalendarEvent,
+): Promise<number> {
+  const head = await d1
+    .prepare('SELECT MAX(id) AS max_id FROM calendar_events')
+    .first<{ max_id: number | null }>();
   const id = (head?.max_id ?? 0) + 1;
 
-  await c.env.DB.prepare(
-    'INSERT INTO calendar_events ' +
-      '(id, year, event_type, status, occurrence_date, expected_window, ' +
-      'title_fi, title_en, summary_fi, summary_en, source_url) ' +
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-  )
+  await d1
+    .prepare(
+      'INSERT INTO calendar_events ' +
+        '(id, year, event_type, status, occurrence_date, expected_window, ' +
+        'title_fi, title_en, summary_fi, summary_en, source_url) ' +
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
     .bind(
       id,
       validated.year,
@@ -2913,6 +2934,15 @@ async function createCalendarEvent(c: Context<AppEnv>): Promise<Response> {
       validated.sourceUrl,
     )
     .run();
+  return id;
+}
+
+async function createCalendarEvent(c: Context<AppEnv>): Promise<Response> {
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const validated = validateConsoleCalendarEvent(dto);
+
+  const id = await insertCalendarEventRow(c.env.DB, validated);
 
   await new WorkerAuditService(c.env.DB).logChange({
     entityType: 'calendar_event',
@@ -3002,6 +3032,273 @@ async function updateCalendarEvent(c: Context<AppEnv>): Promise<Response> {
   });
 
   return c.json({ id, ...calendarEventAuditValue(validated) });
+}
+
+// ---------------------------------------------------------------------------
+// Calendar event candidates — the source-watcher's review queue (task 4.1,
+// change calendar-event-automation)
+// ---------------------------------------------------------------------------
+
+/**
+ * The ops review queue over the watcher's PENDING proposals (task 3.3):
+ * list, accept (candidate → audited calendar event), reject (terminal,
+ * row retained so its URL keeps deduplicating). NEVER public: the rows
+ * carry internal workflow state, the public calendar endpoints read
+ * only `calendar_events`, and an accepted event reaches the public API
+ * exclusively through this section's insert into that one table — the
+ * same {@link insertCalendarEventRow} path the calendar-events
+ * maintenance section uses (one INSERT into the public table).
+ *
+ * ## Accept ordering — insert event first, mark candidate second
+ *
+ * The event insert failing must NOT leave the candidate ACCEPTED, so
+ * the decision is written to `calendar_events` BEFORE the candidate row
+ * flips: a validator rejection (via the pure {@link acceptCandidate}
+ * mapping, then the persistence-boundary `validateCalendarEvent`) or an
+ * insert failure throws while the candidate is still PENDING — nothing
+ * decided, retryable cleanly. The reverse failure (candidate row not
+ * markable AFTER a live event exists) cannot be compensated: a public
+ * calendar row never dangles mid-year (the calendar-events section's
+ * own no-delete rule), so a delete-to-rollback would trade an honest
+ * inconsistency for a forbidden one. Instead the failure is logged with
+ * both ids and answered 409 naming the created event — the event and
+ * its `calendar_event` audit row stand (both true), the candidate stays
+ * PENDING (visible in the queue), and the audit trail records exactly
+ * what happened. Single-operator console: the window is one request.
+ *
+ * ## Status transitions
+ *
+ * The pure state machine owns every decision ({@link acceptCandidate} /
+ * {@link rejectCandidate}) — terminal states, URL identity, draft-to-
+ * text resolution, year derivation, and the whole event contract check
+ * live there. The route maps its typed errors: a decided-again candidate
+ * is 409 InvalidTransition (match-review parity), a contract violation
+ * is 400 ValidationError in the validator's own words. The repository's
+ * `updateStatus ... WHERE status = 'PENDING'` is the storage-side mirror
+ * of the same machine, so a stale queue view can never overwrite a
+ * decision even if two operators raced.
+ *
+ * Every accept/reject appends a `calendar_candidate` audit row
+ * (operator identity, before/after, note) through the same
+ * WorkerAuditService as every console mutation; the created event
+ * additionally gets the standard `calendar_event` created row.
+ */
+
+/** Map the pure state machine's typed refusals onto the console error
+ * envelope (match-reviewHttpError parity — distinct reasons, no string
+ * matching). */
+function candidateDecisionHttpError(err: unknown): ApiHttpError | null {
+  if (err instanceof InvalidCandidateTransitionError) {
+    return new ApiHttpError(409, {
+      statusCode: 409,
+      message: err.message,
+      error: 'InvalidTransition',
+    });
+  }
+  if (err instanceof InvalidCalendarInputError) {
+    return new ApiHttpError(400, {
+      statusCode: 400,
+      message: err.message,
+      error: 'ValidationError',
+    });
+  }
+  return null;
+}
+
+/** GET /ops/console/calendar-candidates — the PENDING worklist, newest
+ * detected first (the repository's deterministic order). Drafts ride the
+ * rows: they pre-fill the accept form's optional overrides. */
+async function listCalendarCandidates(c: Context<AppEnv>): Promise<Response> {
+  const candidates = await new D1CalendarCandidateRepository(
+    c.env.DB,
+  ).listPending();
+  return c.json({ items: candidates.map(candidateItem), total: candidates.length });
+}
+
+/** The console's candidate row — the watcher's proposal facts. */
+function candidateItem(
+  candidate: CalendarEventCandidate & { id: number },
+): Record<string, unknown> {
+  return {
+    id: candidate.id,
+    source: candidate.source,
+    url: candidate.url,
+    title: candidate.title,
+    publishedAt: candidate.publishedAt,
+    status: candidate.status,
+    draftFi: candidate.draftFi,
+    draftEn: candidate.draftEn,
+  };
+}
+
+/** The operator's accept form as the request carries it. The exact-one
+ * date-or-window rule, the closed vocabularies, and the year derivation
+ * are the pure mapping's checks — the route never pre-coerces. */
+function acceptanceFormFromDto(dto: Record<string, unknown>): CalendarCandidateAcceptanceForm {
+  const override = (key: 'titleFi' | 'titleEn' | 'summaryFi' | 'summaryEn'): string | undefined =>
+    dto[key] === undefined ? undefined : (dto[key] as string);
+  return {
+    eventType: dto.eventType as CalendarCandidateAcceptanceForm['eventType'],
+    status: dto.status as CalendarCandidateAcceptanceForm['status'],
+    occurrenceDate: (dto.occurrenceDate ?? null) as string | null,
+    expectedWindow: (dto.expectedWindow ?? null) as string | null,
+    titleFi: override('titleFi'),
+    titleEn: override('titleEn'),
+    summaryFi: override('summaryFi'),
+    summaryEn: override('summaryEn'),
+  };
+}
+
+/** POST /ops/console/calendar-candidates/:id/accept — the operator's
+ * calendar framing (type, status, date-or-window, optional FI/EN text
+ * overrides) turns the PENDING candidate into a publicly visible event
+ * per its status. See the section doc for the ordering and the audit
+ * trail. */
+async function acceptCalendarCandidate(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+
+  const repo = new D1CalendarCandidateRepository(c.env.DB);
+  const stored = await repo.findById(id);
+  if (stored === null) {
+    throw new ApiHttpError(404, `Calendar candidate ${id} not found`);
+  }
+
+  // The pure decision: validates the candidate row, the transition, and
+  // the whole event combination (in the event contract's own words)
+  // BEFORE anything is written.
+  let accepted: ReturnType<typeof acceptCandidate>;
+  try {
+    accepted = acceptCandidate(stored, acceptanceFormFromDto(dto));
+  } catch (err) {
+    const mapped = candidateDecisionHttpError(err);
+    if (mapped !== null) throw mapped;
+    throw err;
+  }
+
+  // The event rides the persistence-boundary validator + the one INSERT
+  // the calendar-events section uses — publicly visible per its status
+  // immediately. A failure here leaves the candidate PENDING (ordering:
+  // section doc).
+  const validated = validateConsoleCalendarEvent(
+    accepted.event as unknown as Record<string, unknown>,
+  );
+  const eventId = await insertCalendarEventRow(c.env.DB, validated);
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'calendar_event',
+    entityId: String(eventId),
+    action: 'created',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      `Calendar event accepted from candidate ${id} (${stored.source})`,
+    newValue: calendarEventAuditValue(validated),
+  });
+
+  // Storage-side terminal-state guard: false means the candidate was no
+  // longer PENDING. The event is already live and audited — this is the
+  // uncompensatable direction (section doc): report it honestly instead
+  // of pretending the decision did not happen.
+  const marked = await repo.updateStatus(id, 'ACCEPTED');
+  if (!marked) {
+    const log = createLogger(c.env.LOG_LEVEL);
+    log.error({
+      message:
+        `Calendar candidate accept inconsistency: event ${eventId} was created and audited ` +
+        `but candidate ${id} could not be marked ACCEPTED (no longer PENDING — decided ` +
+        'concurrently or row changed mid-request). The public event stands; the queue row ' +
+        'needs a manual decision. No candidate-status compensation exists by design: a public ' +
+        'calendar row never dangles mid-year.',
+      candidateId: id,
+      eventId,
+    });
+    throw new ApiHttpError(409, {
+      statusCode: 409,
+      message:
+        `Candidate ${id} could not be marked ACCEPTED — it was no longer PENDING, but calendar ` +
+        `event ${eventId} was already created and is publicly visible. Repair the queue row ` +
+        'manually (the audit trail carries the event creation).',
+      error: 'CandidateMarkConflict',
+      eventId,
+    });
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'calendar_candidate',
+    entityId: String(id),
+    // The match-review confirm's action word: the trust-gate moment.
+    action: 'confirmed',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      `Candidate accepted via operator console (${stored.source})`,
+    previousValue: { status: 'PENDING', url: stored.url, source: stored.source },
+    newValue: {
+      status: 'ACCEPTED',
+      url: stored.url,
+      eventId,
+      eventType: validated.eventType,
+      eventStatus: validated.status,
+    },
+  });
+
+  return c.json({
+    id,
+    status: 'ACCEPTED',
+    eventId,
+    event: calendarEventAuditValue(validated),
+  });
+}
+
+/** POST /ops/console/calendar-candidates/:id/reject — terminal REJECTED;
+ * the row is RETAINED (no delete path exists): rejection is what keeps
+ * the URL known, so the same announcement never re-enters the queue
+ * (the watcher's dedup reads every stored URL, any status). */
+async function rejectCalendarCandidate(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+
+  const repo = new D1CalendarCandidateRepository(c.env.DB);
+  const stored = await repo.findById(id);
+  if (stored === null) {
+    throw new ApiHttpError(404, `Calendar candidate ${id} not found`);
+  }
+
+  try {
+    rejectCandidate(stored);
+  } catch (err) {
+    const mapped = candidateDecisionHttpError(err);
+    if (mapped !== null) throw mapped;
+    throw err;
+  }
+
+  // Same storage-side guard as accept; nothing public was written here,
+  // so a lost race is a plain 409 with nothing to repair.
+  const marked = await repo.updateStatus(id, 'REJECTED');
+  if (!marked) {
+    throw new ApiHttpError(409, {
+      statusCode: 409,
+      message: `Candidate ${id} is no longer PENDING — ACCEPTED and REJECTED are terminal`,
+      error: 'InvalidTransition',
+    });
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'calendar_candidate',
+    entityId: String(id),
+    action: 'updated',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Candidate rejected via operator console (row retained for URL dedup)',
+    previousValue: { status: 'PENDING', url: stored.url, source: stored.source },
+    newValue: { status: 'REJECTED', url: stored.url },
+  });
+
+  return c.json({ id, status: 'REJECTED', url: stored.url });
 }
 
 // ---------------------------------------------------------------------------
@@ -3202,6 +3499,16 @@ export function registerOpsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.get('/ops/console/calendar-events', listCalendarEvents);
   app.post('/ops/console/calendar-events', createCalendarEvent);
   app.post('/ops/console/calendar-events/:id', updateCalendarEvent);
+
+  // Calendar event candidates (task 4.1, calendar-event-automation) —
+  // the source-watcher's review queue: the PENDING worklist, accept
+  // (candidate → publicly visible event per its status, through the
+  // persistence-boundary validator + the calendar-events section's one
+  // INSERT), reject (terminal, row retained for URL dedup). Console-only:
+  // the public calendar endpoints read calendar_events and nothing else.
+  app.get('/ops/console/calendar-candidates', listCalendarCandidates);
+  app.post('/ops/console/calendar-candidates/:id/accept', acceptCalendarCandidate);
+  app.post('/ops/console/calendar-candidates/:id/reject', rejectCalendarCandidate);
 
   // Name-quality quarantine queue (task 3.1, product-name-quality-gate)
   // — the read-only enrichment listing; rides the /ops/console/* guard

@@ -257,6 +257,10 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
       ['POST', '/ops/console/match-review/1/confirm'],
       ['POST', '/ops/console/match-review/1/reject'],
       ['POST', '/ops/console/reference-links/1/supersede'],
+      // Calendar-candidates review queue (calendar-event-automation 4.1).
+      ['GET', '/ops/console/calendar-candidates'],
+      ['POST', '/ops/console/calendar-candidates/1/accept'],
+      ['POST', '/ops/console/calendar-candidates/1/reject'],
     ];
     for (const [method, path] of opsRoutes) {
       const closed = await probe(app, testEnv(d1), path, { method });
@@ -498,6 +502,12 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/ops/console/blog/guides/:id', ['POST'], 'opsAccess'],
   ['/ops/console/blog/posts', ['GET'], 'opsAccess'],
   ['/ops/console/blog/posts/:id/publish', ['POST'], 'opsAccess'],
+  // Calendar event candidates (calendar-event-automation 4.1) — the
+  // source-watcher's review queue: list/accept/reject on the opsAccess
+  // prefix; console-only (the public calendar reads serve events).
+  ['/ops/console/calendar-candidates', ['GET'], 'opsAccess'],
+  ['/ops/console/calendar-candidates/:id/accept', ['POST'], 'opsAccess'],
+  ['/ops/console/calendar-candidates/:id/reject', ['POST'], 'opsAccess'],
   // Calendar events (tax-change-calendar 5.1) — the audited maintenance
   // path (list/create/update; deliberately no delete).
   ['/ops/console/calendar-events', ['GET', 'POST'], 'opsAccess'],
