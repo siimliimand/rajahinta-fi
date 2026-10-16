@@ -146,6 +146,50 @@ export async function getServerProductListing(): Promise<ProductSearchItem[]> {
   }
 }
 
+/**
+ * One enumerated catalog row — the product id and its truthful `lastmod`
+ * (`MAX(product_master.updated_at, latest retail_offers.observed_at)`,
+ * ISO string — task 1.1, change sitemap-tree-coverage).
+ */
+export interface ProductIdEntry {
+  readonly id: number;
+  readonly lastmod: string;
+}
+
+/** One `/api/v1/products/ids` page — an id-ordered slice plus the total it slices. */
+export interface ProductIdPage {
+  readonly items: ProductIdEntry[];
+  readonly total: number;
+}
+
+/**
+ * Enumerate product ids for the sitemap tree (GET /api/v1/products/ids,
+ * sitemap-tree-coverage tasks 1.1/2.1): id-ordered `offset`/`limit`
+ * slices, `limit` clamped at the endpoint's 5,000 chunk cap, each row
+ * carrying the product's truthful `lastmod`. Degradation contract: a
+ * failed or unreadable read returns null — deliberately distinct from a
+ * legitimately empty slice (an `offset` past `total`), which returns an
+ * empty items array; the sitemap-tree caller decides how a null page
+ * bounds the enumeration.
+ */
+export async function getServerProductIds(
+  offset: number,
+  limit: number,
+): Promise<ProductIdPage | null> {
+  const params = new URLSearchParams({
+    offset: String(offset),
+    limit: String(limit),
+  });
+  try {
+    return await serverRequest<ProductIdPage>(`/api/v1/products/ids?${params}`, {
+      headers: { 'x-age-confirmed': SERVER_AGE_CONFIRMATION_TOKEN },
+      next: { revalidate: 900 },
+    });
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Price history (task 5.1)
 // ---------------------------------------------------------------------------
