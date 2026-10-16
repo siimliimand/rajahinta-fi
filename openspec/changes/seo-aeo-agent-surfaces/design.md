@@ -100,6 +100,22 @@ Additive only: new lib module, new Q&A section, new api-worker module and
 endpoint, sitemap field, message keys. No data migration, no backfill, no
 breaking payload change (the listing `updated_at` addition is additive).
 
+### D8. `product.updatedAt` is serialized at day precision (amended during apply)
+
+The verification wave caught a real interaction: the additive `updatedAt` SEO
+field on the shared product serializer (detail + listing + MCP `get_product`)
+was emitted with millisecond precision, and the byte-identity compliance suites
+(warnings / distance-selling badges / benchmarks additivity) reseed a fresh
+composition per state — the differing insert timestamps broke byte-identity on
+master-green suites. Fix: the field is the stored date at DAY precision
+(`YYYY-MM-DD`), which is all the Product JSON-LD `dateModified` needs
+(schema.org accepts a bare date), keeps the field truthful and explainable, and
+restores cross-composition determinism. The savings-snapshot isolation
+import-analysis allowlist gained `apps/api-worker/src/mcp/tools.ts` as a
+display reader: its savings embeds are route-parity display blocks, its
+calculator tool is the G3 route composition (parity-pinned), and the
+input-producer scan set is unchanged.
+
 ## Open Questions
 
 None — age-gate exposure and read-only scope were decided by the owner

@@ -927,7 +927,7 @@ describe('GET /api/v1/products/:id (detail)', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, any>;
     expect(typeof body.product.updatedAt).toBe('string');
-    expect(body.product.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(body.product.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   // fi-locale-surface-hardening 2.5 (design D3): the registry display

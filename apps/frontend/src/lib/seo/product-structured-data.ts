@@ -201,11 +201,14 @@ export function buildProductJsonLd(input: ProductJsonLdInput): ProductJsonLd {
 
 /**
  * `dateModified` from the row's updated_at: present only when the field
- * arrived AND parses as a timestamp, normalized to UTC ISO-8601 (a
- * formatting step — the instant is the stored one, never re-based).
+ * arrived AND is a usable date. The API serializes the stored date at
+ * day precision, which passes through verbatim as a schema.org Date; a
+ * fuller timestamp normalizes to UTC ISO-8601 (a formatting step — the
+ * instant is the stored one, never re-based).
  */
 function dateModifiedOf(updatedAt: string | undefined): { readonly dateModified?: string } {
   if (updatedAt === undefined) return {};
+  if (/^\d{4}-\d{2}-\d{2}$/.test(updatedAt)) return { dateModified: updatedAt };
   const parsed = new Date(updatedAt);
   if (Number.isNaN(parsed.getTime())) return {};
   return { dateModified: parsed.toISOString() };

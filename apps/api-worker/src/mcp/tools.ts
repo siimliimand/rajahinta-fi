@@ -793,7 +793,9 @@ async function getProductPayload(
       // Additive SEO field (seo-aeo-agent-surfaces 1.1, route parity):
       // product_master.updated_at — the detail response's dateModified
       // source. Same key the public route serializes.
-      updatedAt: product.updatedAt.toISOString(),
+      // Route parity with the detail route's additive SEO field —
+      // day precision for the same byte-identity reason (seo-aeo-agent-surfaces 1.1).
+      updatedAt: product.updatedAt.toISOString().slice(0, 10),
     },
     offers: offers.map((o) => ({
       id: o.id,
