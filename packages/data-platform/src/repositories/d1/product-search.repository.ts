@@ -259,6 +259,19 @@ interface D1OfferCandidateRow {
   readonly reliability_status: string;
 }
 
+/**
+ * Raw D1 id-slice row (task 1.1, change sitemap-tree-coverage) — the
+ * product's row-freshness timestamp beside its offer-freshness aggregate
+ * (null when the product has no observed offer; the composition to
+ * `lastmod` happens in {@link latestIsoTimestamp}, never in SQL, so the
+ * truth rule stays testable app-side).
+ */
+interface D1ProductIdSliceRow {
+  readonly id: number;
+  readonly updated_at: string;
+  readonly offer_freshness: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Spike-ported query helpers (search-parity reference implementation)
 // ---------------------------------------------------------------------------
@@ -782,6 +795,49 @@ const CATALOG_KEYS_BY_PRICE_SQL = `
    WHERE ${PRODUCT_LISTING_UNIVERSE_SQL}`;
 
 /**
+ * The id-ordered enumeration slice (task 1.1, change
+ * sitemap-tree-coverage, design D3/D5) — the sitemap's full-product
+ * enumeration source. Shared listing universe (the sitemap enumerates
+ * exactly the products the catalog lists), PK-order streaming (`id` ASC —
+ * a monotonic serial, so slice membership is frozen across
+ * regenerations; design D3), and the offer-freshness aggregate as a
+ * SELECT-list correlated subquery: with `ORDER BY p.id` satisfied by the
+ * rowid scan, SQLite materializes result columns only for the rows it
+ * emits past LIMIT/OFFSET, so the subquery executes at most `limit`
+ * times per read — bounded by the slice size, never the catalog.
+ *
+ * Cost shape (D5 fallback-decision input, 2026-10-16): each subquery
+ * probe rides `retail_offers_product_merchant_id_idx` (product_id-leading,
+ * migration 0025; asserted by EXPLAIN QUERY PLAN in
+ * product-id-slice.repository.test.ts) and reads only that product's
+ * offer rows — ~1.26 offers/product today, so a 5,000 slice probes
+ * ≈5,000 index ranges ≈6.3k offer rows, NOT the whole offer history.
+ * Measured on the fake-D1 (node:sqlite in-memory) harness at
+ * catalog-realistic scale (20,839 products, 28,131 offers): the
+ * 5,000-slice read — offer-freshness aggregate plus universe COUNT in one
+ * batch — completed in ≈26 ms, comfortably inside the slice budget. The
+ * aggregate does NOT trip D5's first fallback at 5,000-slice scale; the
+ * `updated_at`-only fallback remains a one-line change here (drop the
+ * subquery column) if production rows_read disagrees.
+ *
+ * Exported so the suite runs EXPLAIN QUERY PLAN on the exact statement
+ * (the findCandidatesSql precedent) — never reworded at the call site.
+ */
+export const PRODUCT_ID_SLICE_SQL = `
+  SELECT p.id AS id, p.updated_at AS updated_at,
+         (SELECT MAX(o.observed_at) FROM retail_offers o
+           WHERE o.product_id = p.id) AS offer_freshness
+    FROM product_master p
+   WHERE ${PRODUCT_LISTING_UNIVERSE_SQL}
+   ORDER BY p.id ASC
+   LIMIT ? OFFSET ?`;
+
+/** Exact universe total for the slice — COUNT beside the same universe. */
+const PRODUCT_ID_SLICE_TOTAL_SQL = `
+  SELECT COUNT(*) AS total FROM product_master p
+   WHERE ${PRODUCT_LISTING_UNIVERSE_SQL}`;
+
+/**
  * Defensive cap on ranking candidate rows (task 1.1, change
  * unitprice-ranking-scale-fix, design D3) — NOT a pagination contract.
  * Candidates are latest-per-merchant offers (~1.04 per product today, the
@@ -952,6 +1008,54 @@ export interface CategoryOfferCandidate {
   readonly offerId: number;
   readonly priceCents: number;
   readonly reliabilityStatus: string;
+}
+
+/**
+ * One id-ordered enumeration slice — the sitemap tree's data source
+ * (task 1.1, change sitemap-tree-coverage, design D3/D5). `items` is the
+ * slice in `product_master.id` ASC order; `total` is the exact universe
+ * size, uncapped by the slice, so the consumer derives the chunk count
+ * without paging to the end.
+ */
+export interface ProductIdSlicePage {
+  readonly items: ReadonlyArray<{
+    readonly id: number;
+    /**
+     * Truthful page-content freshness (design D5): the later of the
+     * product row's `updated_at` and its freshest observed offer
+     * timestamp, ISO-8601 TEXT verbatim from storage — never a
+     * generation-time instant (a fabricated lastmod is read as noise and
+     * discounted by crawlers, and it would be a lie about the page).
+     */
+    readonly lastmod: string;
+  }>;
+  /** Exact size of the listing universe — never a fetch-capped subset. */
+  readonly total: number;
+}
+
+/**
+ * The truthful `lastmod` composition (design D5): the LATER of the
+ * product row's `updated_at` and its freshest observed-offer timestamp —
+ * either is a real change to the product page's content (row edit or
+ * freshest price observation). Both columns are NOT NULL ISO-8601 UTC
+ * TEXT in the D1 default fixed-width format, compared by epoch ms so
+ * mixed precision stays chronological. Failure posture: an unparseable
+ * stored value is IGNORED, never replaced — the result falls back to the
+ * other stored value (a null/unusable offer aggregate yields
+ * `updated_at` alone, which is exactly D5's first fallback level
+ * expressed per row; regeneration time is forbidden as a substitute).
+ */
+export function latestIsoTimestamp(
+  rowUpdatedAt: string,
+  offerFreshness: string | null,
+): string {
+  const rowMs = Date.parse(rowUpdatedAt);
+  if (offerFreshness === null) return rowUpdatedAt;
+  const offerMs = Date.parse(offerFreshness);
+  if (!Number.isFinite(offerMs)) return rowUpdatedAt;
+  if (!Number.isFinite(rowMs)) return offerFreshness;
+  // Equal instants keep the row value (both are the same truth).
+  return offerMs > rowMs ? offerFreshness : rowUpdatedAt;
 }
 
 @Injectable()
@@ -1611,6 +1715,55 @@ export class D1ProductSearchRepository extends ProductRepository {
     });
 
     return { items, total, page, pageSize };
+  }
+
+  /**
+   * The id-ordered enumeration slice for the sitemap tree (task 1.1,
+   * change sitemap-tree-coverage, design D3/D5): `limit` items starting
+   * at `offset` in `product_master.id` ASC order over the shared listing
+   * universe, with the exact universe total. One `d1.batch` round trip —
+   * [0] the slice (offer-freshness aggregate included),
+   * [1] the universe COUNT.
+   *
+   * `lastmod` composes per row through {@link latestIsoTimestamp}
+   * (MAX of `updated_at` and the freshest `retail_offers.observed_at`;
+   * offer-less rows keep `updated_at` — D5's per-row fallback, never a
+   * fabricated instant). The clamp at 5,000 is the ROUTE's contract
+   * (design D2 chunk size); this method enforces only argument validity.
+   *
+   * Kept on the D1 concrete class only (the listCatalogPage precedent):
+   * the sitemap route binds the concrete type.
+   */
+  async listProductIdSlice(
+    offset: number,
+    limit: number,
+  ): Promise<ProductIdSlicePage> {
+    // A negative offset would slice from the statement's tail semantics
+    // (SQLite OFFSET with a negative value acts as 0) — but the contract
+    // is exactness, so invalid arguments are loud, not coerced.
+    if (!Number.isInteger(offset) || offset < 0) {
+      throw new TypeError(
+        `offset must be a non-negative integer, got ${offset}`,
+      );
+    }
+    if (!Number.isInteger(limit) || limit < 1) {
+      throw new TypeError(`limit must be a positive integer, got ${limit}`);
+    }
+    // Result order is statement order: [0] slice rows, [1] total.
+    const [sliceResult, totalResult] = await this.d1.batch([
+      this.d1.prepare(PRODUCT_ID_SLICE_SQL).bind(limit, offset),
+      this.d1.prepare(PRODUCT_ID_SLICE_TOTAL_SQL),
+    ]);
+    const rows = sliceResult.results as unknown as D1ProductIdSliceRow[];
+    const total = (totalResult.results[0] as unknown as { total: number })
+      .total;
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        lastmod: latestIsoTimestamp(row.updated_at, row.offer_freshness),
+      })),
+      total,
+    };
   }
 
   /** @inheritdoc */
