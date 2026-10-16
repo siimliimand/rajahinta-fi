@@ -7,8 +7,11 @@
  * `/sitemap.xml` is a sitemapindex over the descriptive tree
  * (`app/sitemap.xml/route.ts`); `/sitemaps/[tree]`
  * (`app/sitemaps/[tree]/route.ts`) serves the `pages` and `editorial`
- * urlsets (`products-N` chunks are task 2.3 — until then the chunk
- * route serves an honest empty urlset). The suites below assert
+ * urlsets plus the `products-N` paired chunks (task 2.3: one
+ * 5,000-product id-ordered slice per chunk, fi+en URLs of the same
+ * slice in one file, the endpoint's truthful lastmod, honest absence
+ * past the chunk count, an honest empty urlset on a degraded read).
+ * The suites below assert
  * against those handlers: with every backend fetch degraded (the
  * sitemap's own degradation contract), the `pages` tree still emits
  * the static destinations for both URL spaces — Finnish serves the
@@ -33,6 +36,7 @@ import { fileURLToPath } from 'node:url';
 import { GET as indexGET } from './sitemap.xml/route';
 import { GET as treeGET } from './sitemaps/[tree]/route';
 import { routing } from '@/i18n/routing';
+import { PRODUCT_CHUNK_SIZE } from '@/lib/sitemap-xml';
 
 // notFound() in a real request aborts with Next's 404 fallback — a
 // throw is the observable equivalent outside a Next runtime.
@@ -203,6 +207,7 @@ function locs(xml: string): string[] {
 /** One parsed `<url>` of a urlset document. */
 interface ParsedUrlEntry {
   url: string;
+  lastmod?: string;
   changefreq?: string;
   priority?: string;
   alternates: Record<string, string>;
@@ -213,6 +218,7 @@ function parseUrlset(xml: string): ParsedUrlEntry[] {
   return [...xml.matchAll(/<url>([\s\S]*?)<\/url>/g)].map((match) => {
     const block = match[1];
     const url = block.match(/<loc>(.*?)<\/loc>/)![1];
+    const lastmod = block.match(/<lastmod>(.*?)<\/lastmod>/)?.[1];
     const alternates: Record<string, string> = {};
     for (const link of block.matchAll(
       /<xhtml:link rel="alternate" hreflang="(.*?)" href="(.*?)" \/>/g,
@@ -221,7 +227,7 @@ function parseUrlset(xml: string): ParsedUrlEntry[] {
     }
     const changefreq = block.match(/<changefreq>(.*?)<\/changefreq>/)?.[1];
     const priority = block.match(/<priority>(.*?)<\/priority>/)?.[1];
-    return { url, changefreq, priority, alternates };
+    return { url, lastmod, changefreq, priority, alternates };
   });
 }
 
@@ -313,6 +319,61 @@ function stubEditorialContent(options: {
 /** Stub every backend read as unreachable — the suite-wide degradation posture. */
 function stubBackendDown(): void {
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('down')));
+}
+
+/** One enumerated catalog row, as `/api/v1/products/ids` serves it (task 1.1). */
+interface FixtureProduct {
+  id: number;
+  lastmod: string;
+}
+
+/** Ascending-id fixture catalog with a distinct truthful lastmod per row. */
+function productCatalog(count: number, firstId = 1): FixtureProduct[] {
+  return Array.from({ length: count }, (_, index) => ({
+    id: firstId + index,
+    lastmod: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
+  }));
+}
+
+/**
+ * Stub the enumeration endpoint (GET /api/v1/products/ids, tasks
+ * 1.1/2.3) with a real id-ordered slice implementation: `offset` and
+ * `limit` honored, `limit` clamped at the endpoint's 5,000 cap, `total`
+ * the catalog length. `catalog === null` stubs every read as
+ * unreachable — the degraded-read shape getServerProductIds translates
+ * to null. `options.omitTotal` serves the items without a `total` (a
+ * misbehaving endpoint); `options.total` overrides the served total.
+ * Any other endpoint answers empty — the inert-shape degradation.
+ */
+function stubProductEnumeration(
+  catalog: readonly FixtureProduct[] | null,
+  options?: { total?: number; omitTotal?: boolean },
+): void {
+  if (catalog === null) {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('down')));
+    return;
+  }
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/api/v1/products/ids')) {
+        const offset = Number(url.searchParams.get('offset') ?? '0');
+        const limit = Math.min(
+          Number(url.searchParams.get('limit') ?? '5'),
+          PRODUCT_CHUNK_SIZE,
+        );
+        const body: Record<string, unknown> = {
+          items: catalog.slice(offset, offset + limit),
+        };
+        if (!options?.omitTotal) {
+          body.total = options?.total ?? catalog.length;
+        }
+        return { ok: true, json: async () => body };
+      }
+      return { ok: true, json: async () => ({ items: [] }) };
+    }),
+  );
 }
 
 /**
@@ -903,5 +964,187 @@ describe('sitemap localized URLs and hreflang alternates (task 2.1, on the tree 
     }
     // The catalog base and category views remain in pages.
     expect(pagesUrls.has(`${SITE}/tuotteet`)).toBe(true);
+  });
+});
+
+/**
+ * The products-N paired chunks (task 2.3, design D1/D2/D3/D5): one
+ * 5,000-product id-ordered offset slice per chunk, the fi+en URLs of
+ * the same slice in ONE file (alternates stay in-chunk, D1), the
+ * enumeration endpoint's truthful lastmod per URL (D5 — passthrough,
+ * never fabricated), and the range honesty that keeps the index's
+ * child list truthful (D4): a chunk at or past the enumerated chunk
+ * count does not exist (404, the same convention as any slug outside
+ * the served vocabulary), while a degraded enumeration read serves the
+ * honest empty urlset — the sitemap never fails.
+ */
+describe('products-N paired chunks (task 2.3)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('serves the fi+en pair of every product in its id-ordered slice with the endpoint’s truthful lastmod', async () => {
+    const catalog = productCatalog(3, 11);
+    stubProductEnumeration(catalog);
+    const { entries } = await treeDocument('products-0');
+
+    expect(entries.map((entry) => entry.url)).toEqual([
+      `${SITE}/tuotteet/11`,
+      `${SITE}/en/products/11`,
+      `${SITE}/tuotteet/12`,
+      `${SITE}/en/products/12`,
+      `${SITE}/tuotteet/13`,
+      `${SITE}/en/products/13`,
+    ]);
+    // Truthful passthrough: each emitted lastmod is exactly the value
+    // the endpoint served for that product — never generation time (D5).
+    const lastmodById = new Map(catalog.map((product) => [product.id, product.lastmod]));
+    for (const entry of entries) {
+      const id = Number(new URL(entry.url).pathname.split('/').pop());
+      expect(entry.lastmod, `${entry.url} carries its product's lastmod`).toBe(
+        lastmodById.get(id),
+      );
+    }
+  });
+
+  it('chunk membership is stable across regenerations — same slice read, byte-identical document', async () => {
+    stubProductEnumeration(productCatalog(3, 11));
+    const first = await (await fetchTree('products-0')).text();
+    const second = await (await fetchTree('products-0')).text();
+    expect(second).toBe(first);
+  });
+
+  it('reads the id-ordered offset slice: chunk N requests offset N·5,000 at the 5,000 limit (D2/D3)', async () => {
+    stubProductEnumeration(productCatalog(3, 11));
+    await treeDocument('products-0');
+    // In-range check happens after the read, so the request of an
+    // out-of-range chunk is observable too.
+    await expect(fetchTree('products-1')).rejects.toBe(NOT_FOUND);
+
+    const slices = vi
+      .mocked(fetch)
+      .mock.calls.map((call) => String(call[0]))
+      .filter((url) => url.includes('/api/v1/products/ids'))
+      .map((url) => {
+        const parsed = new URL(url);
+        return `${parsed.searchParams.get('offset')}+${parsed.searchParams.get('limit')}`;
+      });
+    expect(slices).toEqual(['0+5000', '5000+5000']);
+  });
+
+  it('keeps alternates in-chunk: x-default → the bare fi URL, the same set on the fi and en entries', async () => {
+    const catalog = productCatalog(3, 11);
+    stubProductEnumeration(catalog);
+    const { xml, entries } = await treeDocument('products-0');
+    const emitted = new Set(entries.map((entry) => entry.url));
+
+    const linkLines = (block: string): string =>
+      block
+        .split('\n')
+        .filter((line) => line.startsWith('<xhtml:link'))
+        .join('\n');
+    const blocks = [...xml.matchAll(/<url>([\s\S]*?)<\/url>/g)].map(
+      (match) => match[1],
+    );
+
+    for (let index = 0; index < catalog.length; index += 1) {
+      const product = catalog[index];
+      const fi = `${SITE}/tuotteet/${product.id}`;
+      const en = `${SITE}/en/products/${product.id}`;
+      const expected = { 'x-default': fi, fi, en };
+      const fiEntry = entries[index * 2];
+      const enEntry = entries[index * 2 + 1];
+      expect(fiEntry.url, `product ${product.id} fi entry first`).toBe(fi);
+      expect(enEntry.url, `product ${product.id} en entry second`).toBe(en);
+      expect(fiEntry.alternates).toEqual(expected);
+      expect(enEntry.alternates).toEqual(expected);
+      for (const target of Object.values(expected)) {
+        expect(
+          emitted,
+          `${target} is emitted in the same chunk as its pair`,
+        ).toContain(target);
+      }
+      // Full-document pairing honesty: the x-default/fi/en set is
+      // byte-identical across the product's fi and en entries.
+      expect(linkLines(blocks[index * 2 + 1])).toBe(linkLines(blocks[index * 2]));
+    }
+  });
+
+  it('a degraded enumeration read → honest empty urlset, 200 xml, no fabricated lastmod (D5)', async () => {
+    stubProductEnumeration(null);
+    const res = await fetchTree('products-0');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('application/xml');
+    const xml = await res.text();
+    expect(xml).not.toContain('<url>');
+    expect(xml).not.toContain('<lastmod>');
+    expect(xml).toContain('</urlset>');
+  });
+
+  it('a chunk at or past the enumerated chunk count 404s — the index never references one (D4)', async () => {
+    stubProductEnumeration(productCatalog(3, 11)); // total 3 → one chunk
+    await expect(
+      fetchTree('products-1'),
+      'products-1 at the chunk count 404s',
+    ).rejects.toBe(NOT_FOUND);
+    await expect(
+      fetchTree('products-99'),
+      'products-99 far past the chunk count 404s',
+    ).rejects.toBe(NOT_FOUND);
+  });
+
+  it('an empty catalog enumerates zero chunks — even products-0 is absent', async () => {
+    stubProductEnumeration([]);
+    await expect(fetchTree('products-0')).rejects.toBe(NOT_FOUND);
+  });
+
+  it('a total the endpoint never supplies counts as zero chunks — no guessed chunk (D4)', async () => {
+    stubProductEnumeration(productCatalog(1, 500), { omitTotal: true });
+    await expect(fetchTree('products-0')).rejects.toBe(NOT_FOUND);
+  });
+
+  it('the last partial chunk serves its remainder at the 5,000 boundary', async () => {
+    stubProductEnumeration(productCatalog(5_001));
+    const { entries } = await treeDocument('products-1');
+
+    expect(entries.map((entry) => entry.url)).toEqual([
+      `${SITE}/tuotteet/5001`,
+      `${SITE}/en/products/5001`,
+    ]);
+  });
+
+  it('chunks partition the catalog — every id exactly once, ascending, no 100-item cap', async () => {
+    const catalog = productCatalog(5_001);
+    stubProductEnumeration(catalog);
+    const fiIds: number[] = [];
+    const enUrls = new Set<string>();
+    for (const chunk of ['products-0', 'products-1']) {
+      const { entries } = await treeDocument(chunk);
+      for (const entry of entries) {
+        const pathname = new URL(entry.url).pathname;
+        if (pathname.startsWith('/en/')) enUrls.add(entry.url);
+        else fiIds.push(Number(pathname.split('/').pop()));
+      }
+    }
+
+    // No listing-page cap: the first, the 101st, and the tail id all emit.
+    expect(fiIds).toContain(1);
+    expect(fiIds).toContain(101);
+    expect(fiIds).toContain(5_001);
+    // Partition: the ascending fi URLs are exactly the catalog, no overlap.
+    expect(fiIds).toEqual(catalog.map((product) => product.id));
+    expect(new Set(fiIds).size).toBe(fiIds.length);
+    expect(enUrls.size).toBe(catalog.length);
+  });
+
+  it('the index references exactly the serving chunks: each 200s, the next one 404s (D4)', async () => {
+    stubProductEnumeration(productCatalog(5_001));
+    const children = locs(await (await fetchIndex()).text());
+
+    expect(children).toEqual([TREE.pages, TREE.products(0), TREE.products(1)]);
+    for (const child of children) {
+      await treeDocument(child.replace(`${SITE}/sitemaps/`, ''));
+    }
+    await expect(fetchTree('products-2')).rejects.toBe(NOT_FOUND);
   });
 });

@@ -17,10 +17,16 @@
  *    empty contributes nothing (an empty `<urlset>` — the tree never
  *    fails), and the index omits the child entirely while all stores
  *    are empty (D4).
- *  - `products-N` — one 5,000-product id-ordered slice, fi+en paired
- *    (D1/D3). Task 2.3 fills the enumeration reader, the truthful
- *    lastmod and the chunk-range check; until then the chunk serves an
- *    honest empty `<urlset>` (see the TODO below).
+ *  - `products-N` — one 5,000-product id-ordered slice (offset
+ *    `N * PRODUCT_CHUNK_SIZE`, D2/D3), the fi+en URLs of the same slice
+ *    in one document with the enumeration endpoint's truthful lastmod
+ *    and the full hreflang pairing (x-default → the bare fi URL),
+ *    exactly the builder's product-row shape. Range honesty: a chunk
+ *    number at or past `productChunkCount(total)` does not exist — the
+ *    same crawler-honest 404 as any slug outside the vocabulary (D4:
+ *    the index never references one). A degraded enumeration read
+ *    serves the honest empty `<urlset>` — the sitemap never fails, and
+ *    no timestamp is ever fabricated (D5).
  *
  * Any other slug is outside the vocabulary → notFound() → 404, never
  * an empty or guessed document (spec: Unknown tree slug). ISR
@@ -31,11 +37,17 @@
 
 import { notFound } from 'next/navigation';
 import { routing } from '@/i18n/routing';
-import { buildSitemapEntries } from '@/lib/sitemap-entries';
 import {
+  buildSitemapEntries,
+  localizedUrl,
+} from '@/lib/sitemap-entries';
+import {
+  PRODUCT_CHUNK_SIZE,
+  productChunkCount,
   serializeUrlset,
   type SitemapUrlEntry,
 } from '@/lib/sitemap-xml';
+import { getServerProductIds } from '@/lib/server-api';
 
 export const revalidate = 900;
 
@@ -136,15 +148,42 @@ export async function GET(
     );
   }
 
-  if (PRODUCTS_CHUNK_PATTERN.test(tree)) {
-    // TODO(sitemap-tree-coverage 2.3): fill with the paired chunk —
-    // the id-ordered offset slice (offset = N * PRODUCT_CHUNK_SIZE,
-    // width PRODUCT_CHUNK_SIZE) read through getServerProductIds, fi+en
-    // URLs per product with the endpoint's truthful lastmod (D5), and
-    // a chunk-range check of N against the enumerated total. Task 2.2
-    // serves the honest empty urlset so the index's references (built
-    // from the real total) never point at a 404.
-    return urlsetResponse([]);
+  const chunkMatch = PRODUCTS_CHUNK_PATTERN.exec(tree);
+  if (chunkMatch) {
+    const chunk = Number(chunkMatch[1]);
+    const page = await getServerProductIds(
+      chunk * PRODUCT_CHUNK_SIZE,
+      PRODUCT_CHUNK_SIZE,
+    );
+
+    // Degraded read (D5): the sitemap never fails and never fabricates —
+    // the honest empty urlset, not a guessed or timestamped document.
+    if (page === null) return urlsetResponse([]);
+
+    // Out of range (chunk at/past the enumerated chunk count, or a total
+    // the endpoint never supplied): the chunk does not exist — the index
+    // never references one (D4), so the same crawler-honest 404 as any
+    // slug outside the vocabulary, never an empty or guessed document.
+    if (chunk >= productChunkCount(page.total)) notFound();
+
+    const entries: SitemapUrlEntry[] = [];
+    for (const item of page.items) {
+      const fi = localizedUrl('/products/[id]', 'fi', { id: item.id });
+      const en = localizedUrl('/products/[id]', 'en', { id: item.id });
+      // The builder's pairing shape (D6): x-default → the bare fi URL;
+      // both localized entries share one map so the sets are identical.
+      const languages = { 'x-default': fi, fi, en };
+      for (const url of [fi, en]) {
+        entries.push({
+          url,
+          lastmod: item.lastmod,
+          changeFrequency: 'daily',
+          priority: 0.5,
+          alternates: { languages: { ...languages } },
+        });
+      }
+    }
+    return urlsetResponse(entries);
   }
 
   // Outside the tree vocabulary — a crawler-honest 404, never an empty
