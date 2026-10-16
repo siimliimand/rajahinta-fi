@@ -51,6 +51,10 @@ import { handleSavingsSnapshots } from './savings-snapshots';
 import { handleOutcomeMargins } from './outcome-margins';
 import { handleRetentionSweep, RETENTION_CRON } from './retention-sweep';
 import { handleContactRetention } from './contact-retention';
+import {
+  runCalendarSkeleton,
+  CALENDAR_SKELETON_CRON,
+} from './calendar-skeleton';
 import { measureAndRecordDataQualityGauges } from '../observability/data-quality';
 import {
   INGESTION_PRODUCER_CRON,
@@ -195,6 +199,15 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
   add(RETENTION_CRON, {
     name: 'contact-retention',
     run: (env, log) => handleContactRetention(env, log),
+  });
+  // Task 3.1 (change calendar-event-automation): the annual January tick
+  // generates the year's two ALKO_PRICE_LIST EXPECTED rows through the
+  // pure core-domain generator — ignore-if-present via the generator's
+  // all-or-nothing year rule, so re-runs create no duplicates
+  // (src/cron/calendar-skeleton.ts; the fail-open wrapper is the entry).
+  add(CALENDAR_SKELETON_CRON, {
+    name: 'calendar-skeleton',
+    run: (env, log) => runCalendarSkeleton(env, log),
   });
 
   return table;

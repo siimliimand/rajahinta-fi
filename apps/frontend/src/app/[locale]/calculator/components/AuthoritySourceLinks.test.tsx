@@ -1,13 +1,14 @@
 /**
- * AuthoritySourceLinks tests (audit-copy-batch task 3.1).
+ * AuthoritySourceLinks tests (audit-copy-batch 3.1; completed by
+ * calculator-authority-links-completion).
  *
- * The calculator result's permanent official-source link set mirrors the
- * API's OFFICIAL_SOURCES (packages/core-domain
- * src/declaration/excise-declaration.service.ts) verbatim — no URL is
- * invented in the client. The pins:
- *   1. The heading labels the set, and both vero.fi links render in the
- *      API's order with their catalog labels.
- *   2. Both anchors open in a new tab without granting the opened page
+ * The calculator result's curated authority links: the declaration panel's
+ * two vero.fi guidance pages first, then the verified traveller links the
+ * audit named (vero.fi Alkoholiverolaskuri, Tulli traveller guidance).
+ * The pins:
+ *   1. The heading labels the set, and all four links render in the set's
+ *      order with their catalog labels.
+ *   2. Every anchor opens in a new tab without granting the opened page
  *      access (noopener) — the guidance panel's anchor conventions.
  *
  * @module AuthoritySourceLinksTest
@@ -21,7 +22,7 @@ import AuthoritySourceLinks from './AuthoritySourceLinks';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 
 describe('AuthoritySourceLinks (audit-copy-batch 3.1)', () => {
-  it('renders the heading and both vero.fi links in the official-source order', () => {
+  it('renders the heading and all four authority links in the curated order', () => {
     renderWithIntl(<AuthoritySourceLinks />);
 
     expect(
@@ -29,9 +30,9 @@ describe('AuthoritySourceLinks (audit-copy-batch 3.1)', () => {
     ).toHaveTextContent('Viranomaislähteet');
 
     const links = screen.getAllByRole('link');
-    expect(links).toHaveLength(2);
-    // Same set and order as the API's OFFICIAL_SOURCES — alcohol excise
-    // duty first, then the excise-duties overview.
+    expect(links).toHaveLength(4);
+    // Declaration panel's vero.fi guidance set first, then the audit's
+    // traveller links (verified live 2026-10-16).
     expect(links[0]).toHaveAttribute(
       'href',
       'https://www.vero.fi/yritykset-ja-yhteisot/verot-ja-maksut/valmisterverot/alkoholi/',
@@ -42,6 +43,16 @@ describe('AuthoritySourceLinks (audit-copy-batch 3.1)', () => {
       'https://www.vero.fi/yritykset-ja-yhteisot/verot-ja-maksut/valmisterverot/',
     );
     expect(links[1]).toHaveTextContent('Valmisteverot (vero.fi)');
+    expect(links[2]).toHaveAttribute(
+      'href',
+      'https://www.vero.fi/henkiloasiakkaat/verokortti-ja-veroilmoitus/ulkomailta_suomeen/matkustajatuonti/alkoholiverolaskuri',
+    );
+    expect(links[2]).toHaveTextContent('Alkoholiverolaskuri (vero.fi)');
+    expect(links[3]).toHaveAttribute(
+      'href',
+      'https://tulli.fi/rajoitukset/alkoholi/tuonti-matkalta',
+    );
+    expect(links[3]).toHaveTextContent('Alkoholin tuonti matkalta (Tulli)');
   });
 
   it('opens the authorities in a new tab without granting them access', () => {

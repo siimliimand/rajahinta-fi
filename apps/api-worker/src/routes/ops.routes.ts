@@ -43,11 +43,16 @@
  *
  * ## Fail-closed stores (documented scope note, task 3.8)
  *
- * - Tax rate-review entries have NO D1 counterpart yet (2.5 ported
- *   sessions, audit, watermarks, registry), so the rate-review and
- *   correction WRITES still reject with 503 rather than fabricating
- *   persistence — mirroring the phase-1 backend, where the same stores
- *   are in-memory or null-ported.
+ * - Tax rate-review REJECTIONS still have no store to record a
+ *   resolution into (2.5 ported sessions, audit, watermarks, registry),
+ *   so reject rejects with 503 rather than fabricating persistence.
+ *   APPROVE is the versioned-publication confirmation gate (task 3.2,
+ *   change calendar-event-automation): `:id` is the confirmed dataset
+ *   version label, the audit trail is the durable confirmation record,
+ *   and the confirmation fans out fail-open (alerts, blog drafts, and
+ *   the CONFIRMED FI_EXCISE_CHANGE calendar event for a new effective
+ *   year).
+ * - The correction queue's writes still reject with 503 (no D1 table).
  * - Source governance (task 2.2, change durable-source-governance-store)
  *   is DURABLE now: the list joins the merchant registry with the
  *   D1SourceGovernanceRepository's aggregated `checkPermission` (never
@@ -116,6 +121,8 @@ import {
   notifyNewsletterSubscribers,
 } from '../services/newsletter.service';
 import { createLogger } from '../logger';
+import { runRateConfirmationHooks } from '../cron/rate-confirmation';
+import { runCalendarEventFanout } from '../cron/calendar-event-fanout';
 import { passesContentPolicy } from '../../../../packages/core-domain/src/content/content-lint';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
 import {
@@ -1705,17 +1712,107 @@ function taxReviewsUnavailable(): never {
   throw new ApiHttpError(503, {
     statusCode: 503,
     message:
-      'Tax rate-review resolution is unavailable: the rate-review store has no D1 ' +
+      'Tax rate-review rejection is unavailable: the rate-review store has no D1 ' +
       'counterpart yet (migrate-to-cloudflare 2.5). Failing closed rather than ' +
       'fabricating a resolution.',
     error: 'StoreUnavailable',
   });
 }
 
+/**
+ * POST /ops/console/confirmations/tax/:id/approve — the rate-dataset
+ * confirmation gate (task 3.2, change calendar-event-automation; the
+ * versioned-publication flow's human sign-off).
+ *
+ * `:id` IS the confirmed dataset version label (the pending-review
+ * store still has no D1 counterpart — the queue listing honestly
+ * reports none; the operator confirms the version the daily review
+ * cron detected). The durable confirmation record is the audit trail:
+ * an attributed, timestamped `tax_dataset` confirmed row carrying the
+ * version's official source and earliest effective date — no store,
+ * no fabricated persistence. An unknown version label is a 404, so a
+ * confirmation is always grounded in ingested tax_rules rows.
+ *
+ * At this exact point the platform fans out, each isolation boundary
+ * its own (spec "Calendar event fan-out at the rate-confirmation
+ * gate"):
+ *
+ * - TAX_CHANGE alert evaluation + FI/EN blog drafts — the established
+ *   fire-and-forget seam ({@link runRateConfirmationHooks}, waitUntil,
+ *   individually fail-open);
+ * - the CONFIRMED FI_EXCISE_CHANGE calendar event for a NEW effective
+ *   year — awaited (a confirmed fact is visible through the public
+ *   calendar in the same response) and fail-open ({@link
+ *   runCalendarEventFanout}: any failure is caught and logged, never
+ *   blocks or rolls back the confirmation; the (year, event type) skip
+ *   rule makes a re-confirmation a no-op, not a duplicate).
+ */
 async function approveTaxReview(c: Context<AppEnv>): Promise<Response> {
+  const versionLabel = (c.req.param('id') ?? '').trim();
+  if (versionLabel.length === 0 || versionLabel.length > 64) {
+    throw new ApiHttpError(
+      400,
+      'version label must be a non-empty string (max 64 chars)',
+    );
+  }
   const dto = await readBody(c);
   validateOperator(dto);
-  taxReviewsUnavailable();
+  const operator = dto.operator as string;
+  const log = createLogger(c.env.LOG_LEVEL);
+
+  // Ground the confirmation in the ingested dataset: the version's
+  // rules carry the official source and the effective window the
+  // audit record and the calendar fan-out derive from.
+  const version = await c.env.DB
+    .prepare(
+      `SELECT official_source, MIN(effective_from) AS earliest_effective_from
+         FROM tax_rules WHERE version_label = ?`,
+    )
+    .bind(versionLabel)
+    .first<{ official_source: string | null; earliest_effective_from: string | null }>();
+  if (version === null || version.official_source === null) {
+    throw new ApiHttpError(
+      404,
+      `Rate dataset version ${versionLabel} not found (no sourced tax_rules rows)`,
+    );
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'tax_dataset',
+    entityId: versionLabel,
+    action: 'confirmed',
+    author: operator,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Rate dataset version confirmed via operator console',
+    newValue: {
+      versionLabel,
+      officialSource: version.official_source,
+      earliestEffectiveFrom: version.earliest_effective_from,
+    },
+  });
+
+  // Alerts + drafts ride the fire-and-forget seam (fail-open there);
+  // the calendar fan-out is awaited and fail-open here so the event is
+  // observable in this response and a failure never fails it.
+  let hookCtx: { waitUntil(promise: Promise<unknown>): void } | null = null;
+  try {
+    hookCtx = c.executionCtx;
+  } catch {
+    // No runtime execution context (unit tests) — the seam runs detached.
+  }
+  runRateConfirmationHooks(c.env, log, hookCtx, [versionLabel]);
+  await runCalendarEventFanout(c.env, log, {
+    confirmedVersions: [versionLabel],
+    actor: operator,
+  });
+
+  return c.json({
+    id: versionLabel,
+    status: 'resolved' as const,
+    resolution: 'approve' as const,
+    resolvedAt: new Date().toISOString(),
+  });
 }
 
 async function rejectTaxReview(c: Context<AppEnv>): Promise<Response> {

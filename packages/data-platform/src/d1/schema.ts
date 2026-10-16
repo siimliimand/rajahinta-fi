@@ -2800,6 +2800,88 @@ export const calendarEvents = sqliteTable(
 );
 
 /**
+ * Candidate review status — the closed operator-review vocabulary the
+ * source-watcher proposes with and the ops console decides on
+ * (spec: calendar-event-automation, "Candidate collection from source
+ * feeds" + "Operator review queue"): PENDING is the watcher's insert,
+ * ACCEPTED and REJECTED are the operator's terminal decisions.
+ */
+export const CALENDAR_CANDIDATE_STATUSES = ['PENDING', 'ACCEPTED', 'REJECTED'] as const;
+
+export type CalendarCandidateStatus = (typeof CALENDAR_CANDIDATE_STATUSES)[number];
+
+/** SQL IN-list fragment rendered from the exported value set (the CALENDAR_EVENT_STATUS_VALUES precedent). */
+const CALENDAR_CANDIDATE_STATUS_VALUES = sql.raw(
+  `(${CALENDAR_CANDIDATE_STATUSES.map((s) => `'${s}'`).join(', ')})`,
+);
+
+/**
+ * Calendar-event candidates — watcher-observed announcements awaiting
+ * operator review (task 1.2, change calendar-event-automation). One row
+ * per source-feed item the watcher proposed; NEVER public — the ops
+ * console is the only reader, and an ACCEPTED candidate becomes a
+ * calendar_events row through the operator's form, not by itself.
+ *
+ * `url` is UNIQUE — structural dedup: the pure layer's insert decision
+ * compares the exact string (core-domain's decideCandidateInsert), and
+ * the column makes the same rule unrepresentable to break at rest, so
+ * a re-seen announcement can never re-enter the queue even through a
+ * raw-SQL path. REJECTED rows are retained on purpose: their URL keeps
+ * deduplicating.
+ *
+ * The status CHECK is the closed review vocabulary — a decided
+ * candidate is terminal in data, exactly as in the pure state machine.
+ * The persistence-boundary validator
+ * (repositories/calendar-candidate-validator.ts) re-states the same
+ * contract with errors naming the valid values; the CHECK is the
+ * last-line guarantee for raw SQL paths.
+ *
+ * draft_fi/draft_en are NULLable on purpose (unlike calendar_events'
+ * NOT NULL locale texts): candidates are internal, and the watcher may
+ * extract no text at all — the drafts are pre-fill for the accept
+ * form, never event text on their own; the operator supplies real text
+ * at accept, through the event contract.
+ *
+ * calendar_event_candidates_queue_idx serves the review-queue read with
+ * one composite index: filter on the leading status column, order by
+ * published_at, url as the deterministic tiebreak.
+ */
+export const calendarEventCandidates = sqliteTable(
+  'calendar_event_candidates',
+  {
+    id: integer('id').primaryKey(),
+    /** Watcher feed identifier (e.g. 'vero-fi-news') — the provenance of the proposal. */
+    source: text('source', { length: 64 }).notNull(),
+    /** The announcement's URL — UNIQUE, the dedup key (exact-string rule). */
+    url: text('url', { length: 512 }).notNull().unique(),
+    /** The announcement's headline as observed. */
+    title: text('title', { length: 512 }).notNull(),
+    /** Publication date of the source item, ISO YYYY-MM-DD TEXT (the house date shape). */
+    publishedAt: text('published_at', { length: 10 }).notNull(),
+    /** PENDING (watcher insert), ACCEPTED / REJECTED (terminal operator decisions). */
+    status: text('status', { length: 16 }).notNull(),
+    /** Watcher's draft Finnish text, or NULL when none was extracted. */
+    draftFi: text('draft_fi'),
+    /** Watcher's draft English text, or NULL when none was extracted. */
+    draftEn: text('draft_en'),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // The review-queue read: WHERE status = 'PENDING' ORDER BY
+    // published_at (url tiebreak) in one indexed query.
+    index('calendar_event_candidates_queue_idx').on(
+      table.status,
+      table.publishedAt,
+      table.url,
+    ),
+    check(
+      'calendar_event_candidates_status_check',
+      sql`${table.status} IN ${CALENDAR_CANDIDATE_STATUS_VALUES}`,
+    ),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -2851,4 +2933,5 @@ export const d1Schema = {
   ferryPriceObservations,
   merchantReliabilityAggregates,
   calendarEvents,
+  calendarEventCandidates,
 };

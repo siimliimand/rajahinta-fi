@@ -422,6 +422,9 @@ export {
   calendarEvents,
   type CalendarEventType,
   type CalendarEventStatus,
+  CALENDAR_CANDIDATE_STATUSES,
+  calendarEventCandidates,
+  type CalendarCandidateStatus,
 } from './d1/schema';
 export {
   validateCalendarEvent,
@@ -430,6 +433,11 @@ export {
   type ExpectedCalendarEvent,
   type ValidatedCalendarEvent,
 } from './repositories/calendar-event-validator';
+export {
+  validateCalendarEventCandidate,
+  type CalendarEventCandidateInput,
+  type ValidatedCalendarEventCandidate,
+} from './repositories/calendar-candidate-validator';
 export { DrizzleCalendarEventRepository } from './repositories/calendar-event.repository';
 
 // ---------------------------------------------------------------------------

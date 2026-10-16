@@ -644,6 +644,17 @@ export {
   CALENDAR_EVENT_STATUSES,
   CALENDAR_EVENT_REPOSITORY_PORT,
   InvalidCalendarInputError,
+  generateAlkoSkeleton,
+  ALKO_RHYTHM_SOURCE_URL,
+  CALENDAR_SKELETON_TEXT_FI,
+  CALENDAR_SKELETON_TEXT_EN,
+  CALENDAR_CANDIDATE_STATUSES,
+  CANDIDATE_INSERT_DECISIONS,
+  InvalidCandidateTransitionError,
+  assertValidCalendarCandidate,
+  decideCandidateInsert,
+  acceptCandidate,
+  rejectCandidate,
 } from './calendar/index';
 export type {
   CalendarEventType,
@@ -653,6 +664,15 @@ export type {
   NextCalendarEvent,
   ResolvedExpectedWindow,
   ICalendarEventRepositoryPort,
+  AlkoSkeletonEvent,
+  CalendarSkeletonText,
+  CalendarSkeletonCoverageEvent,
+  CalendarCandidateStatus,
+  CalendarEventCandidate,
+  CalendarCandidateAcceptanceForm,
+  CalendarEventReadyPayload,
+  CandidateAcceptanceResult,
+  CandidateInsertDecision,
 } from './calendar/index';
 
 // ---------------------------------------------------------------------------
