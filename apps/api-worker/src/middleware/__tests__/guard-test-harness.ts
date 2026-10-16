@@ -151,6 +151,12 @@ export function buildProbeApp(): Hono<AppEnv> {
   app.post('/ops/console/match-review/:id/reject', ok);
   app.post('/ops/console/reference-links/:id/supersede', ok);
 
+  // Calendar-candidates review queue (task 4.1, change
+  // calendar-event-automation) — same /ops/console/* guard prefix.
+  app.get('/ops/console/calendar-candidates', ok);
+  app.post('/ops/console/calendar-candidates/:id/accept', ok);
+  app.post('/ops/console/calendar-candidates/:id/reject', ok);
+
   // Name-quality quarantine queue (task 3.1, change
   // product-name-quality-gate) — the read-only enrichment listing.
   app.get('/ops/console/name-quality/quarantined', ok);
