@@ -217,7 +217,9 @@ function nextResponse(
     status: 'CONFIRMED',
     daysUntil: 12,
     expectedWindow: null,
-    disclaimer: 'Vuosirytmi: …',
+    // The route's serialization: the versioned disclaimer OBJECT
+    // (core-domain `selectRhythmDisclaimer` verbatim), never a string.
+    disclaimer: { text: 'Vuosirytmi: …', language: 'fi', version: '1.0' },
     ...overrides,
   };
 }
@@ -281,7 +283,7 @@ describe('deriveNextTaxChangeState', () => {
     expect(deriveNextTaxChangeState(read, 'fi').kind).toBe('hidden');
   });
 
-  it('hides on an unknown status, a missing title, or a missing disclaimer', () => {
+  it('hides on an unknown status, a missing title, or a disclaimer violating its shape', () => {
     expect(
       deriveNextTaxChangeState(nextResponse({ status: 'DRAFT' }), 'fi').kind,
     ).toBe('hidden');
@@ -291,9 +293,123 @@ describe('deriveNextTaxChangeState', () => {
         'fi',
       ).kind,
     ).toBe('hidden');
+    // The route serves the versioned object — an empty text…
     expect(
-      deriveNextTaxChangeState(nextResponse({ disclaimer: '' }), 'fi').kind,
+      deriveNextTaxChangeState(
+        nextResponse({ disclaimer: { text: '', language: 'fi', version: '1.0' } }),
+        'fi',
+      ).kind,
     ).toBe('hidden');
+    // …a missing version, and the pre-fix bare-string shape all hide.
+    expect(
+      deriveNextTaxChangeState(
+        nextResponse({
+          disclaimer: { text: 'Vuosirytmi: …', language: 'fi' } as unknown as CalendarNextResponse['disclaimer'],
+        }),
+        'fi',
+      ).kind,
+    ).toBe('hidden');
+    expect(
+      deriveNextTaxChangeState(
+        nextResponse({
+          disclaimer: 'Vuosirytmi: …' as unknown as CalendarNextResponse['disclaimer'],
+        }),
+        'fi',
+      ).kind,
+    ).toBe('hidden');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Live payload serialization (task 4.6 amendment) — the fixture below IS
+// the route's response shape (staging-verified;
+// apps/api-worker/src/routes/calendar.routes.ts serializes the core-domain
+// Disclaimer object verbatim). The pre-fix consumers typed a bare string,
+// so the live payload hid the widget; these tests prove the widget renders
+// from the ACTUAL payload.
+// ---------------------------------------------------------------------------
+
+describe('deriveNextTaxChangeState — live route serialization', () => {
+  /** The live EXPECTED payload (structure copied from the staging response). */
+  const LIVE_EXPECTED: CalendarNextResponse = {
+    fromDate: '2026-10-16',
+    event: {
+      id: 6,
+      year: 2026,
+      eventType: 'RATE_DECISION',
+      status: 'EXPECTED',
+      occurrenceDate: null,
+      expectedWindow: '2026-Q4',
+      titleFi: 'Vuoden 2027 verotaulukon lainsäädäntö odottaa eduskuntakäsittelyä',
+      titleEn: 'The 2027 statutory tax-table legislation awaits the Finnish parliament',
+      summaryFi: 'Yhteenveto',
+      summaryEn: 'Summary',
+      sourceUrl: 'https://www.vero.fi/veromuutokset-2027',
+    },
+    status: 'EXPECTED',
+    daysUntil: null,
+    expectedWindow: '2026-Q4',
+    disclaimer: {
+      text: 'Vuosirytmi: veromuutosten ja hintaluetteloiden ajankohdat toistuvat vuosittain saman kalenterirytmin mukaan. Merkintä kuvaa julkaisuaikataulua — se ei ole virallinen ilmoitus eikä tieto vero- tai hintamuutoksesta.',
+      language: 'fi',
+      version: '1.0',
+    },
+  };
+
+  /** The same serialization with a CONFIRMED row and a real day figure. */
+  const LIVE_CONFIRMED: CalendarNextResponse = {
+    ...LIVE_EXPECTED,
+    event: {
+      ...LIVE_EXPECTED.event,
+      id: 5,
+      eventType: 'TAX_TABLE_PUBLICATION',
+      status: 'CONFIRMED',
+      occurrenceDate: '2026-10-28',
+      expectedWindow: null,
+      titleFi: 'Veronkorotus voimaan',
+      titleEn: 'Tax increase takes effect',
+    },
+    status: 'CONFIRMED',
+    daysUntil: 12,
+    expectedWindow: null,
+  };
+
+  it('renders the CONFIRMED live payload with the countdown the route recomputed', () => {
+    const state = deriveNextTaxChangeState(LIVE_CONFIRMED, 'fi');
+    expect(state.kind).toBe('confirmed');
+
+    const dom = renderWidget(state);
+    expect(dom.querySelector('[data-testid="next-tax-change"]')).not.toBeNull();
+    expect(
+      dom.querySelector('[data-testid="next-tax-change-countdown"]')
+        ?.textContent,
+    ).toContain('12');
+  });
+
+  it('renders the EXPECTED live payload with the disclaimer text and NO countdown', () => {
+    const state = deriveNextTaxChangeState(LIVE_EXPECTED, 'fi');
+    expect(state).toEqual<NextTaxChangeState>({
+      kind: 'expected',
+      title: 'Vuoden 2027 verotaulukon lainsäädäntö odottaa eduskuntakäsittelyä',
+      windowLabel: 'Q4 2026',
+      // The object's text rides the state verbatim — never the object.
+      disclaimer: LIVE_EXPECTED.disclaimer.text,
+    });
+
+    const dom = renderWidget(state);
+    expect(
+      dom.querySelector('[data-testid="next-tax-change-disclaimer"]')
+        ?.textContent,
+    ).toContain(
+      'Vuosirytmi: veromuutosten ja hintaluetteloiden ajankohdat toistuvat',
+    );
+    // No countdown for a window event — the honesty pin holds on the
+    // live shape (daysUntil is `null` there, nothing may be invented).
+    expect(
+      dom.querySelector('[data-testid="next-tax-change-countdown"]'),
+    ).toBeNull();
+    expect(dom.textContent).not.toContain('päivän kuluttua');
+    expect(dom.textContent).not.toContain('Tänään');
   });
 });
 

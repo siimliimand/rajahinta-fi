@@ -112,7 +112,8 @@ function confirmedBody(): CalendarNextResponse {
     status: 'CONFIRMED',
     daysUntil: 12,
     expectedWindow: null,
-    disclaimer: 'Vuosirytmi: …',
+    // The route's serialization: the versioned disclaimer OBJECT, never a string.
+    disclaimer: { text: 'Vuosirytmi: …', language: 'fi', version: '1.0' },
   };
 }
 
@@ -135,7 +136,11 @@ function expectedBody(): CalendarNextResponse {
     status: 'EXPECTED',
     daysUntil: null,
     expectedWindow: '2026-Q4',
-    disclaimer: 'Vuosirytmi: merkintä kuvaa julkaisuaikataulua.',
+    disclaimer: {
+      text: 'Vuosirytmi: merkintä kuvaa julkaisuaikataulua.',
+      language: 'fi',
+      version: '1.0',
+    },
   };
 }
 
@@ -251,5 +256,100 @@ describe('HomePage next-tax-change widget (tax-change-calendar task 4.2)', () =>
     expect(html).toContain(
       'Laske alkoholin todellinen kokonaishinta Suomeen',
     );
+  });
+
+  it('renders the widget from the route\'s LIVE serialization (task 4.6 staging smoke)', async () => {
+    // The fixture below IS the live GET /api/v1/calendar/next payload
+    // (structure staging-verified; calendar.routes.ts serializes the
+    // core-domain Disclaimer object verbatim). The pre-fix consumer
+    // typed a bare string, so this exact payload hid the widget on
+    // staging — here it must render through the REAL page.
+    const liveExpectedBody: CalendarNextResponse = {
+      fromDate: '2026-10-16',
+      event: {
+        id: 6,
+        year: 2026,
+        eventType: 'RATE_DECISION',
+        status: 'EXPECTED',
+        occurrenceDate: null,
+        expectedWindow: '2026-Q4',
+        titleFi: 'Vuoden 2027 verotaulukon lainsäädäntö odottaa eduskuntakäsittelyä',
+        titleEn: 'The 2027 statutory tax-table legislation awaits the Finnish parliament',
+        summaryFi: 'Yhteenveto',
+        summaryEn: 'Summary',
+        sourceUrl: 'https://www.vero.fi/veromuutokset-2027',
+      },
+      status: 'EXPECTED',
+      daysUntil: null,
+      expectedWindow: '2026-Q4',
+      disclaimer: {
+        text: 'Vuosirytmi: veromuutosten ja hintaluetteloiden ajankohdat toistuvat vuosittain saman kalenterirytmin mukaan. Merkintä kuvaa julkaisuaikataulua — se ei ole virallinen ilmoitus eikä tieto vero- tai hintamuutoksesta.',
+        language: 'fi',
+        version: '1.0',
+      },
+    };
+
+    const html = await renderHomeWithCalendar({ body: liveExpectedBody });
+
+    const widget = calendarWidget(html);
+    expect(widget).not.toBeNull();
+    expect(widget?.textContent).toContain(
+      'Vuoden 2027 verotaulukon lainsäädäntö odottaa eduskuntakäsittelyä',
+    );
+    expect(
+      widget?.querySelector('[data-testid="next-tax-change-window"]')
+        ?.textContent,
+    ).toBe('Q4 2026');
+    // The disclaimer TEXT from the live object renders (never a
+    // fabricated countdown beside it).
+    expect(
+      widget?.querySelector('[data-testid="next-tax-change-disclaimer"]')
+        ?.textContent,
+    ).toContain(
+      'Vuosirytmi: veromuutosten ja hintaluetteloiden ajankohdat toistuvat',
+    );
+    expect(
+      widget?.querySelector('[data-testid="next-tax-change-countdown"]'),
+    ).toBeNull();
+
+    // The CONFIRMED variant of the same serialization renders the
+    // route's recomputed day figure.
+    const liveConfirmedBody: CalendarNextResponse = {
+      ...liveExpectedBody,
+      event: {
+        ...liveExpectedBody.event,
+        id: 5,
+        eventType: 'TAX_TABLE_PUBLICATION',
+        status: 'CONFIRMED',
+        occurrenceDate: '2026-10-28',
+        expectedWindow: null,
+        titleFi: 'Veronkorotus voimaan',
+        titleEn: 'Tax increase takes effect',
+      },
+      status: 'CONFIRMED',
+      daysUntil: 12,
+      expectedWindow: null,
+    };
+    const confirmedHtml = await renderHomeWithCalendar({
+      body: liveConfirmedBody,
+    });
+    const confirmedContainer = document.createElement('div');
+    confirmedContainer.innerHTML = confirmedHtml;
+    expect(
+      confirmedContainer.querySelector(
+        '[data-testid="next-tax-change-countdown"]',
+      )?.textContent,
+    ).toContain('12');
+  });
+
+  it('hides the widget when the live payload carries a bare-string disclaimer (pre-fix shape)', async () => {
+    const body = expectedBody();
+    const broken = {
+      ...body,
+      disclaimer: 'Vuosirytmi: merkintä kuvaa julkaisuaikataulua.' as unknown as CalendarNextResponse['disclaimer'],
+    };
+    const html = await renderHomeWithCalendar({ body: broken });
+
+    expect(calendarWidget(html)).toBeNull();
   });
 });

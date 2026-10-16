@@ -18,7 +18,7 @@
  * fi.json/en.json entries land in a later task.
  */
 import React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { NextIntlClientProvider } from 'next-intl';
@@ -149,7 +149,13 @@ function eventsResponse(
 ): CalendarEventsResponse {
   return {
     year: 2026,
-    disclaimer: language === 'fi' ? DISCLAIMER_FI : DISCLAIMER_EN,
+    // The route's serialization: the versioned disclaimer OBJECT
+    // (`selectRhythmDisclaimer` verbatim), never a bare string.
+    disclaimer: {
+      text: language === 'fi' ? DISCLAIMER_FI : DISCLAIMER_EN,
+      language,
+      version: '1.0',
+    },
     events,
   };
 }
@@ -284,6 +290,80 @@ describe('CalendarTimeline — 2026 seeded set (fi)', () => {
 
     expect(screen.getByText('Ladataan veromuutoksia…')).toBeInTheDocument();
     expect(screen.queryByTestId('calendar-timeline')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The route's real serialization (task 4.6 amendment) — the fixture below
+// IS the live `/api/v1/calendar/events` payload shape (staging-verified;
+// calendar.routes.ts serializes the core-domain Disclaimer object), so
+// the assertions prove the island renders the ACTUAL response, not the
+// pre-fix bare-string shape that blanked the cards.
+// ---------------------------------------------------------------------------
+
+describe('CalendarTimeline — live payload serialization', () => {
+  /** The route's real serialization: versioned disclaimer object at the top level. */
+  const LIVE_PAYLOAD: CalendarEventsResponse = {
+    year: 2026,
+    disclaimer: {
+      text: DISCLAIMER_FI,
+      language: 'fi',
+      version: '1.0',
+    },
+    events: [
+      seededEvent({
+        id: 5,
+        eventType: 'TAX_TABLE_PUBLICATION',
+        status: 'CONFIRMED',
+        occurrenceDate: '2026-08-06',
+        expectedWindow: null,
+      }),
+      seededEvent({
+        id: 6,
+        eventType: 'RATE_DECISION',
+        status: 'EXPECTED',
+        occurrenceDate: null,
+        expectedWindow: '2026-Q4',
+      }),
+    ],
+  };
+
+  it('renders the live object disclaimer on EXPECTED cards and the date on CONFIRMED cards', async () => {
+    mockRequest.mockResolvedValue(LIVE_PAYLOAD);
+    renderWithCatalog(<CalendarTimeline year={2026} />, 'fi');
+
+    const timeline = await screen.findByTestId('calendar-timeline');
+    const cards = within(timeline).getAllByTestId('calendar-event-card');
+
+    // The CONFIRMED card shows its exact date…
+    expect(cards[0]).toHaveTextContent('Voimaantulopäivä: 6.8.2026');
+    // …and the EXPECTED card renders the disclaimer TEXT from the live
+    // object (the pre-fix code rendered the object itself → blank).
+    expect(
+      within(cards[1]).getByTestId('calendar-event-disclaimer'),
+    ).toHaveTextContent(DISCLAIMER_FI);
+    expect(cards[1].textContent).not.toContain('Voimaantulopäivä');
+  });
+
+  it('degrades to the transient failure state when the disclaimer violates its shape', async () => {
+    // Both violations degrade identically: a bare string (the pre-fix
+    // consumer shape) and an object without the required text.
+    for (const broken of [
+      { ...eventsResponse(SEEDED_2026), disclaimer: { language: 'fi', version: '1.0' } },
+      {
+        ...eventsResponse(SEEDED_2026),
+        disclaimer: 'Vuosirytmi: …' as unknown as CalendarEventsResponse['disclaimer'],
+      },
+    ]) {
+      cleanup();
+      mockRequest.mockResolvedValue(broken);
+      renderWithCatalog(<CalendarTimeline year={2026} />, 'fi');
+
+      // R2 requires the disclaimer on every EXPECTED card — an unusable
+      // disclaimer means the failure state, never a card without it.
+      await screen.findByText('Luetteloa ei saatu haettua');
+      expect(screen.queryByTestId('calendar-timeline')).not.toBeInTheDocument();
+    }
   });
 });
 

@@ -14,6 +14,8 @@ import { EmptyState, ErrorState, LoadingSkeleton } from '@/components/ui';
 import { Link } from '@/i18n/navigation';
 import {
   groupCalendarEvents,
+  isCalendarDisclaimer,
+  type CalendarDisclaimer,
   type CalendarEventDto,
   type CalendarEventsResponse,
   type CalendarPageLanguage,
@@ -86,10 +88,19 @@ export default function CalendarTimeline({ year }: { year: number }) {
       { signal: AbortSignal.timeout(10_000) },
     )
       .then((res) => {
-        if (!cancelled) {
-          setData(res);
+        if (cancelled) return;
+        // The disclaimer rides every 200 response and every EXPECTED
+        // card REQUIRES it (spec R2) — a payload whose disclaimer
+        // violates its shape cannot render an honest timeline, so it
+        // follows the module's existing failure-state behavior (the
+        // transient ErrorState; the backend served an unusable payload).
+        if (!isCalendarDisclaimer(res?.disclaimer)) {
+          setFailure('server');
           setLoading(false);
+          return;
         }
+        setData(res);
+        setLoading(false);
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -204,7 +215,7 @@ function CalendarEventCard({
 }: {
   event: CalendarEventDto;
   language: CalendarPageLanguage;
-  disclaimer: string;
+  disclaimer: CalendarDisclaimer;
 }) {
   const t = useTranslations('TaxChangeCalendarPage');
   const confirmed = event.status === 'CONFIRMED';
@@ -236,7 +247,7 @@ function CalendarEventCard({
           data-testid="calendar-event-disclaimer"
           className="mb-3 text-xs italic leading-relaxed text-gray-500"
         >
-          {disclaimer}
+          {disclaimer.text}
         </p>
       )}
       {/* External official source — plain anchor, the authority-source

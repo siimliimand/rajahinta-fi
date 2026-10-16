@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   groupCalendarEvents,
+  isCalendarDisclaimer,
   resolveCalendarYear,
   type CalendarEventDto,
 } from './calendar-events';
@@ -72,6 +73,37 @@ describe('resolveCalendarYear', () => {
     expect(resolveCalendarYear('2101', 2026)).toBe(2026);
     expect(resolveCalendarYear('2026.5', 2026)).toBe(2026);
     expect(resolveCalendarYear(['2030', '2025'], 2026)).toBe(2030);
+  });
+});
+
+describe('isCalendarDisclaimer', () => {
+  it('accepts the versioned object the routes serialize', () => {
+    expect(
+      isCalendarDisclaimer({
+        text: 'Vuosirytmi: merkintä kuvaa julkaisuaikataulua.',
+        language: 'fi',
+        version: '1.0',
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects a bare string, null, and non-objects (the pre-fix payload shapes)', () => {
+    expect(isCalendarDisclaimer('Vuosirytmi: …')).toBe(false);
+    expect(isCalendarDisclaimer(null)).toBe(false);
+    expect(isCalendarDisclaimer(undefined)).toBe(false);
+    expect(isCalendarDisclaimer(42)).toBe(false);
+    expect(isCalendarDisclaimer(['Vuosirytmi: …'])).toBe(false);
+  });
+
+  it('rejects objects violating the honesty contract\'s field requirements', () => {
+    const valid = { text: 'Vuosirytmi: …', language: 'fi', version: '1.0' };
+    expect(isCalendarDisclaimer({ ...valid, text: '' })).toBe(false);
+    expect(isCalendarDisclaimer({ ...valid, language: '' })).toBe(false);
+    expect(isCalendarDisclaimer({ ...valid, version: '' })).toBe(false);
+    expect(
+      isCalendarDisclaimer({ text: 'Vuosirytmi: …', language: 'fi' }),
+    ).toBe(false);
+    expect(isCalendarDisclaimer({ ...valid, text: 7 })).toBe(false);
   });
 });
 

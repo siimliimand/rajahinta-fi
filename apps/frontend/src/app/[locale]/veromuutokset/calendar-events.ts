@@ -35,11 +35,45 @@ export interface CalendarEventDto {
   readonly sourceUrl: string;
 }
 
+/**
+ * The versioned rhythm disclaimer as the routes serialize it: the
+ * core-domain selector's `Disclaimer` object verbatim
+ * (`selectRhythmDisclaimer` — never composed at request time), riding
+ * every 200 response of BOTH calendar endpoints.
+ */
+export interface CalendarDisclaimer {
+  readonly text: string;
+  readonly language: string;
+  readonly version: string;
+}
+
+/**
+ * Structural check for the disclaimer a payload claims to carry: an
+ * object with a non-empty string `text` and present, non-empty
+ * `language`/`version` strings (the honesty contract's versioned-note
+ * requirements). Runtime-necessary because the payload arrives as
+ * parsed JSON — a disclaimer violating this shape must never render.
+ */
+export function isCalendarDisclaimer(
+  value: unknown,
+): value is CalendarDisclaimer {
+  if (value === null || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.text === 'string' &&
+    candidate.text !== '' &&
+    typeof candidate.language === 'string' &&
+    candidate.language !== '' &&
+    typeof candidate.version === 'string' &&
+    candidate.version !== ''
+  );
+}
+
 /** Response of `GET /api/v1/calendar/events?year=&language=`. */
 export interface CalendarEventsResponse {
   readonly year: number;
   /** Structural rhythm disclaimer in the requested language. */
-  readonly disclaimer: string;
+  readonly disclaimer: CalendarDisclaimer;
   readonly events: readonly CalendarEventDto[];
 }
 

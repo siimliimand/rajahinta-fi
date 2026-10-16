@@ -31,6 +31,17 @@ export interface CalendarNextEvent {
   readonly sourceUrl: string;
 }
 
+/**
+ * The versioned rhythm disclaimer exactly as the route serializes it —
+ * the core-domain selector's object verbatim (`{text, language,
+ * version}`), never a bare string.
+ */
+export interface CalendarDisclaimer {
+  readonly text: string;
+  readonly language: string;
+  readonly version: string;
+}
+
 /** GET /api/v1/calendar/next response (age-gated; server fetch carries the token). */
 export interface CalendarNextResponse {
   /** The UTC day the route's single clock read produced (`YYYY-MM-DD`). */
@@ -41,7 +52,27 @@ export interface CalendarNextResponse {
   readonly daysUntil: number | null;
   readonly expectedWindow: string | null;
   /** The versioned rhythm disclaimer, selected by the request's language. */
-  readonly disclaimer: string;
+  readonly disclaimer: CalendarDisclaimer;
+}
+
+/**
+ * Structural check mirroring `calendar-events.ts`'s guard (the two
+ * consumer modules speak one payload shape): an object with a non-empty
+ * string `text` and present, non-empty `language`/`version` strings.
+ * The payload arrives as parsed JSON — an object where a string was
+ * typed — so the derive must re-establish the shape before rendering.
+ */
+function isCalendarDisclaimer(value: unknown): value is CalendarDisclaimer {
+  if (value === null || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.text === 'string' &&
+    candidate.text !== '' &&
+    typeof candidate.language === 'string' &&
+    candidate.language !== '' &&
+    typeof candidate.version === 'string' &&
+    candidate.version !== ''
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -136,7 +167,9 @@ export function deriveNextTaxChangeState(
   if (read === null || typeof read !== 'object') return HIDDEN;
   const { event, status, daysUntil, disclaimer } = read;
   if (event === null || typeof event !== 'object') return HIDDEN;
-  if (typeof disclaimer !== 'string' || disclaimer === '') return HIDDEN;
+  // Structural check on the versioned object the route actually serves —
+  // a violated shape is a contract violation and degrades to hidden.
+  if (!isCalendarDisclaimer(disclaimer)) return HIDDEN;
 
   const normalizedLocale: WidgetLocale = locale === 'en' ? 'en' : 'fi';
   const title = normalizedLocale === 'en' ? event.titleEn : event.titleFi;
@@ -158,7 +191,7 @@ export function deriveNextTaxChangeState(
     if (typeof window !== 'string') return HIDDEN;
     const windowLabel = formatExpectedWindowLabel(window, normalizedLocale);
     if (windowLabel === null) return HIDDEN;
-    return { kind: 'expected', title, windowLabel, disclaimer };
+    return { kind: 'expected', title, windowLabel, disclaimer: disclaimer.text };
   }
 
   return HIDDEN;
