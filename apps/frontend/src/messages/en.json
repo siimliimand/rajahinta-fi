@@ -584,7 +584,9 @@
   "AuthorityLinks": {
     "heading": "Official sources",
     "alcoholExcise": "Alcohol excise duty (vero.fi)",
-    "exciseDuties": "Excise duties (vero.fi)"
+    "exciseDuties": "Excise duties (vero.fi)",
+    "alcoholCalculator": "Alcohol duty calculator (vero.fi)",
+    "tulliTravellerGuidance": "Traveller alcohol imports (Finnish Customs)"
   },
   "BasketCommon": {
     "addProducts": "Add products",
