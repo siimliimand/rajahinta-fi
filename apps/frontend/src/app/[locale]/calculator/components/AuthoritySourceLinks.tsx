@@ -1,15 +1,20 @@
 'use client';
 
 /**
- * AuthoritySourceLinks — the declaration guidance panel's permanent
- * official-source link set, surfaced beside the calculator result totals
- * (audit-copy-batch task 3.1).
+ * AuthoritySourceLinks — the calculator surface's curated authority links,
+ * beside the result totals (audit-copy-batch task 3.1, completed by
+ * calculator-authority-links-completion).
  *
- * The URLs are the API's OFFICIAL_SOURCES set
- * (packages/core-domain/src/declaration/excise-declaration.service.ts) —
- * the same two vero.fi links DeclarationGuidancePanel renders in its
- * "official sources" section, mirrored verbatim. No URL is invented here;
- * if the official set grows, this mirror and the API move together.
+ * The declaration guidance panel's OFFICIAL_SOURCES set stays vero.fi-only
+ * (Tax Administration filing context, pinned by test); this component
+ * curates the broader consumer authority context for the calculator: the
+ * two vero.fi guidance pages the panel renders, plus the official
+ * traveller-duty calculator (vero.fi Alkoholiverolaskuri) and Finnish
+ * Customs traveller guidance for alcohol imports.
+ *
+ * Every URL verified live 2026-10-16 (search-index verification; tulli.fi
+ * 403s plain fetchers — CDN posture, same as Posti's documented block).
+ * No URL is invented; new entries require verification first.
  *
  * Informational only: the links guide verification against the authorities
  * and imply no guidance, filing, or computation of their own.
@@ -27,8 +32,8 @@ interface AuthoritySource {
 }
 
 /**
- * The declaration guidance panel's permanent official-source links.
- * Order matches the API's OFFICIAL_SOURCES array.
+ * The calculator-surface authority links. Order: the declaration panel's
+ * vero.fi guidance set first, then the traveller links the audit named.
  */
 const AUTHORITY_SOURCES: readonly AuthoritySource[] = [
   {
@@ -38,6 +43,14 @@ const AUTHORITY_SOURCES: readonly AuthoritySource[] = [
   {
     labelKey: 'exciseDuties',
     url: 'https://www.vero.fi/yritykset-ja-yhteisot/verot-ja-maksut/valmisterverot/',
+  },
+  {
+    labelKey: 'alcoholCalculator',
+    url: 'https://www.vero.fi/henkiloasiakkaat/verokortti-ja-veroilmoitus/ulkomailta_suomeen/matkustajatuonti/alkoholiverolaskuri',
+  },
+  {
+    labelKey: 'tulliTravellerGuidance',
+    url: 'https://tulli.fi/rajoitukset/alkoholi/tuonti-matkalta',
   },
 ];
 

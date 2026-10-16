@@ -584,7 +584,9 @@
   "AuthorityLinks": {
     "heading": "Viranomaislähteet",
     "alcoholExcise": "Alkoholivalmistevero (vero.fi)",
-    "exciseDuties": "Valmisteverot (vero.fi)"
+    "exciseDuties": "Valmisteverot (vero.fi)",
+    "alcoholCalculator": "Alkoholiverolaskuri (vero.fi)",
+    "tulliTravellerGuidance": "Alkoholin tuonti matkalta (Tulli)"
   },
   "BasketCommon": {
     "addProducts": "Lisää tuotteita",
