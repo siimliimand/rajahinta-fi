@@ -14,7 +14,7 @@
  * | Controller (route prefix)        | Nest guards                                   | Worker middleware |
  * |----------------------------------|-----------------------------------------------|----------------------------------------------|
  * | CalculatorController (/api/v1/calculator) | class: RateLimit, AgeGateGuard | ageGate() |
- * | SearchController (/api/v1/products)       | class: AgeGateGuard             | ageGate() — scoped to GET /api/v1/products and GET /api/v1/products/:id |
+ * | SearchController (/api/v1/products)       | class: AgeGateGuard             | ageGate() — scoped to GET /api/v1/products and GET /api/v1/products/:id; GET /api/v1/products/ids (product-ids.routes.ts) applies ageGate() per-route |
  * | BasketOptimizerController (/api/v1/basket)| class: RateLimit                | — |
  * | DeclarationController (/api/v1/declaration)| class: AgeGateGuard; GET :recordId: EntitlementGuard + RequireFeature   | ageGate(); requireFeature('declaration:summary') on GET /:recordId |
  * | AccountController (/api/v1/account)       | class: SessionAuthGuard         | sessionAuth() per route |

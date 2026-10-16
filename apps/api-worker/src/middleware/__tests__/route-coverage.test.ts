@@ -455,6 +455,9 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/api/v1/products/:id/price-context', ['GET'], 'HISTORICAL + ageGate'],
   // Price history — HISTORICAL at index.ts + route-local ageGate.
   ['/api/v1/products/:id/price-history', ['GET'], 'HISTORICAL + ageGate'],
+  // Product id enumeration (sitemap-tree-coverage 1.1) — route-local
+  // ageGate, no rate limit (products-listing parity; server-to-server).
+  ['/api/v1/products/ids', ['GET'], '— + ageGate'],
   // Shop-report submission (task 2.2) — AUTH then sessionAuth.
   ['/api/v1/reports', ['POST'], 'AUTH + sessionAuth'],
   // Calculation-record export — DECLARATION at index.ts + ageGate +
