@@ -1,7 +1,9 @@
 /**
- * Sitemap (task 9.5; curated lists added by task 7.2, blog by
+ * Sitemap entry-builder — the machinery behind the sitemap metadata
+ * route (task 9.5; curated lists added by task 7.2, blog by
  * trust-and-reach-roadmap task 5.2, savings + guides by insight-surfaces
- * tasks 2.4/5.2).
+ * tasks 2.4/5.2; extracted from app/sitemap.ts by sitemap-tree-coverage
+ * task 2.1 so the route handlers of tasks 2.2/2.3 can share it).
  *
  * Static destinations per locale plus the six catalog category URLs
  * (product-catalog task 3.2), per-product URLs drawn from the product
@@ -14,7 +16,7 @@
  * the localized routing vocabulary (routing.pathnames, design D1): the
  * Finnish default serves the localized segments bare (`/tuotteet`),
  * English keeps the internal route names under /en
- * (localePrefix: 'as-needed'). Every emitted URL pairs its localized
+ * (`localePrefix: 'as-needed'`). Every emitted URL pairs its localized
  * variants as hreflang alternates; x-default is the negotiating bare
  * (fi) URL (design D6). Backend reads are cached; an unreachable backend degrades to the
  * unconditional static routes rather than a failed sitemap. The
@@ -24,7 +26,7 @@
  * also omits that locale's editorial index URL (D3 — the same
  * degradation contract, extended to the two indexes).
  *
- * @module Sitemap
+ * @module SitemapEntries
  */
 
 import type { MetadataRoute } from 'next';
@@ -47,7 +49,8 @@ import { routing, type AppLocale, type AppPathnames } from '@/i18n/routing';
  * lockstep with the vocabulary); the emitted URL text is the locale's
  * localized segment (design D1). The /blog and /guides paths are
  * content-gated per locale: emitted only when that locale's slug
- * fetch returned published content (see the loop in sitemap()). */
+ * fetch returned published content (see the loop in
+ * buildSitemapEntries()). */
 const STATIC_PATHS = [
   '/',
   '/calculator',
@@ -96,11 +99,11 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  * failure (backend unreachable, 403, unexpected shape) degrades to an
  * empty list, never a failed sitemap.
  */
-async function getServerCuratedListSlugs(): Promise<string[]> {
+export async function getServerCuratedListSlugs(): Promise<string[]> {
   try {
     const res = await fetch(`${BASE_URL}/api/v1/lists`, {
       headers: { accept: 'application/json' },
-      // Same cadence as the sitemap revalidation below.
+      // Same cadence as the sitemap route's 900 s revalidation.
       next: { revalidate: 900 },
     });
     if (!res.ok) return [];
@@ -123,7 +126,7 @@ async function getServerCuratedListSlugs(): Promise<string[]> {
  * contract as the list slugs: any failure or unexpected shape yields an
  * empty list, never a failed sitemap.
  */
-async function getServerBlogSlugs(locale: string): Promise<string[]> {
+export async function getServerBlogSlugs(locale: string): Promise<string[]> {
   try {
     const res = await fetch(
       `${BASE_URL}/api/v1/blog/posts?locale=${encodeURIComponent(locale)}`,
@@ -151,7 +154,7 @@ async function getServerBlogSlugs(locale: string): Promise<string[]> {
  * only, so anything it returns is advertiseable. Same degradation
  * contract as the blog slugs.
  */
-async function getServerGuideSlugs(locale: string): Promise<string[]> {
+export async function getServerGuideSlugs(locale: string): Promise<string[]> {
   try {
     const res = await fetch(
       `${BASE_URL}/api/v1/guides?locale=${encodeURIComponent(locale)}`,
@@ -173,8 +176,6 @@ async function getServerGuideSlugs(locale: string): Promise<string[]> {
   }
 }
 
-export const revalidate = 900;
-
 /** One advertised URL plus its sitemap attributes. */
 interface AdvertisedUrl {
   url: string;
@@ -193,7 +194,7 @@ type AdvertisedVariants = Partial<Record<AppLocale, AdvertisedUrl>>;
  * /en (`localePrefix: 'as-needed'`). Route params substitute into the
  * bracket templates; query parameters stay English (design D7).
  */
-function localizedPathname(
+export function localizedPathname(
   route: AppPathnames,
   locale: AppLocale,
   params: Readonly<Record<string, string | number>> = {},
@@ -211,7 +212,7 @@ function localizedPathname(
 }
 
 /** Absolute localized URL for an internal route (design D6). */
-function localizedUrl(
+export function localizedUrl(
   route: AppPathnames,
   locale: AppLocale,
   params?: Readonly<Record<string, string | number>>,
@@ -219,7 +220,12 @@ function localizedUrl(
   return `${SITE_URL}${localizedPathname(route, locale, params)}`;
 }
 
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+/**
+ * Build the full sitemap inventory — the metadata route's default
+ * export (app/sitemap.ts) delegates here, and so do the sitemap-tree
+ * route handlers (sitemap-tree-coverage 2.2/2.3).
+ */
+export async function buildSitemapEntries(): Promise<MetadataRoute.Sitemap> {
   const [products, listSlugs, ...slugLists] = await Promise.all([
     getServerProductListing(),
     getServerCuratedListSlugs(),

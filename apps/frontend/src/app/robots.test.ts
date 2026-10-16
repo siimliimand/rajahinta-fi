@@ -81,7 +81,12 @@ describe('robots rules (task 6.2)', () => {
   });
 
   it('advertises the sitemap', () => {
-    expect(robots().sitemap).toBe('https://rajahinta.fi/sitemap.xml');
+    // sitemap-tree-coverage task 2.3: exactly ONE entry point — the
+    // single /sitemap.xml line, never a list — while the index tree
+    // grows beneath it.
+    const sitemap = robots().sitemap;
+    expect(sitemap).toBe('https://rajahinta.fi/sitemap.xml');
+    expect(Array.isArray(sitemap)).toBe(false);
   });
 
   it('no public SEO route is disallowed', () => {

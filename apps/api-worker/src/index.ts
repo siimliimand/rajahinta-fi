@@ -35,6 +35,7 @@ import {
   registerCalculatorRoutes,
 } from './routes/calculator.routes';
 import { registerSearchRoutes } from './routes/search.routes';
+import { registerProductIdsRoutes } from './routes/product-ids.routes';
 import { registerUnitPriceRoutes } from './routes/unitprice.routes';
 import { registerProductDupesRoutes } from './routes/product-dupes.routes';
 import { registerWhatIfRoutes } from './routes/what-if.routes';
@@ -157,6 +158,11 @@ export function createApp(): Hono<AppEnv> {
 
   // Route ports (tasks 3.5–3.8) — handlers appended behind the guards.
   registerCalculatorRoutes(app);
+  // Product-id enumeration (sitemap-tree-coverage 1.1) — registered
+  // BEFORE the search routes so the literal `/api/v1/products/ids` path
+  // can never be captured by search's `/api/v1/products/:id` parameter
+  // route, under any router precedence rule.
+  registerProductIdsRoutes(app);
   registerSearchRoutes(app);
   registerUnitPriceRoutes(app);
   registerProductDupesRoutes(app);

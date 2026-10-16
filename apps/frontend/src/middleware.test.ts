@@ -1,5 +1,6 @@
 /**
- * Middleware matcher contract (fi-path-isr task 3.2).
+ * Middleware matcher contract (fi-path-isr task 3.2; sitemap-tree-coverage
+ * task 4.2).
  *
  * The matcher literal is what keeps `/tuotteet/<id>` out of locale
  * negotiation (fi-path-isr 3.1): a rewrite there would negotiate the
@@ -8,6 +9,12 @@
  * edit could silently re-enroute the FI tree — these pins make that a
  * failing test, from both sides: the excluded path shape and the
  * everyday paths that must stay middleware-managed.
+ *
+ * sitemap-tree-coverage 4.2 extends the same protection to the sitemap
+ * tree: `/sitemaps/<tree>` is a physical Route Handler (ISR revalidate
+ * 900) that the locale negotiation 404s — found live on staging, where
+ * every tree child served the not-found page while `/sitemap.xml`
+ * (dot-path exempt) served fine.
  *
  * @module MiddlewareMatcherTest
  */
@@ -30,7 +37,7 @@ describe('middleware matcher (fi-path-isr 3.2)', () => {
 
   it('pins the matcher literal (drift here is a routing change)', () => {
     expect(config.matcher).toBe(
-      '/((?!api|_next|_vercel|.*\\..*|tuotteet/[^/]+).*)',
+      '/((?!api|_next|_vercel|.*\\..*|tuotteet/[^/]+|sitemaps/[^/]+).*)',
     );
   });
 
@@ -50,5 +57,25 @@ describe('middleware matcher (fi-path-isr 3.2)', () => {
     expect(matcher.test('/laskuri')).toBe(true);
     expect(matcher.test('/en/products/1')).toBe(true);
     expect(matcher.test('/')).toBe(true);
+  });
+
+  it('excludes the sitemap tree Route Handler from negotiation (4.2)', () => {
+    // Every tree child the index references — pages, products-N, and
+    // any future slug — must reach the Route Handler, not the locale
+    // negotiation that 404s non-pathnames.
+    expect(matcher.test('/sitemaps/pages')).toBe(false);
+    expect(matcher.test('/sitemaps/products-0')).toBe(false);
+    // Out-of-vocabulary slugs take the Route Handler's own notFound()
+    // 404, so they are excluded from negotiation too.
+    expect(matcher.test('/sitemaps/nope')).toBe(false);
+    // The index route itself never needed an entry: the dot-path file
+    // exclusion already exempts it (sitemap.xml contains a dot).
+    expect(matcher.test('/sitemap.xml')).toBe(false);
+    // Same lookahead shape as the tuotteet pin: `sitemaps/[^/]+` fails
+    // for anything below the first two segments too, so deeper paths are
+    // excluded as well. No route exists below /sitemaps/<tree>/ (nothing
+    // to negotiate) — the blanket exclusion is harmless, as recorded for
+    // the FI tree.
+    expect(matcher.test('/sitemaps/products-0/extra')).toBe(false);
   });
 });
