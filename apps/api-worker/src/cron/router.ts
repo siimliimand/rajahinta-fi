@@ -55,6 +55,10 @@ import {
   runCalendarSkeleton,
   CALENDAR_SKELETON_CRON,
 } from './calendar-skeleton';
+import {
+  runCalendarSourceWatcher,
+  CALENDAR_WATCHER_CRON,
+} from './calendar-source-watcher';
 import { measureAndRecordDataQualityGauges } from '../observability/data-quality';
 import {
   INGESTION_PRODUCER_CRON,
@@ -208,6 +212,15 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
   add(CALENDAR_SKELETON_CRON, {
     name: 'calendar-skeleton',
     run: (env, log) => runCalendarSkeleton(env, log),
+  });
+  // Task 3.3 (change calendar-event-automation): the daily source-watcher
+  // tick polls the verified feeds (vero.fi news, STT Info Alko mirror,
+  // keyword-gated EMTA) and inserts PENDING review candidates — URL
+  // dedup against every stored candidate, per-feed failures collected
+  // fail-open, never public data (src/cron/calendar-source-watcher.ts).
+  add(CALENDAR_WATCHER_CRON, {
+    name: 'calendar-source-watcher',
+    run: (env, log) => runCalendarSourceWatcher(env, log),
   });
 
   return table;

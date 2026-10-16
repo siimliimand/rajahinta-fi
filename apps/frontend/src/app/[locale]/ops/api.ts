@@ -489,3 +489,97 @@ export function updateCalendarEvent(
     { method: 'POST', body: JSON.stringify(body) },
   );
 }
+
+// ---------------------------------------------------------------------------
+// Calendar event candidates (task 4.1, change calendar-event-automation) —
+// the source-watcher's review queue: list PENDING, accept (operator-chosen
+// calendar framing; the server validates and creates the public event),
+// reject (terminal, retained for URL dedup). Response types are local to
+// the console API module.
+// ---------------------------------------------------------------------------
+
+/** One watcher-detected announcement awaiting review. */
+export interface OpsCalendarCandidateItem {
+  id: number;
+  source: string;
+  url: string;
+  title: string;
+  /** The item's publication date, YYYY-MM-DD (the detected date). */
+  publishedAt: string;
+  status: string;
+  /** The watcher's draft texts — pre-fill for the accept form. */
+  draftFi: string | null;
+  draftEn: string | null;
+}
+
+export interface OpsCalendarCandidatesResponse {
+  items: OpsCalendarCandidateItem[];
+  total: number;
+}
+
+/** The operator's accept form — the calendar framing the candidate can
+ * never supply itself, plus optional per-locale text overrides (a field
+ * with neither override nor draft is a server-side 400). */
+export interface OpsCalendarCandidateAcceptInput {
+  operator: string;
+  eventType: string;
+  status: 'CONFIRMED' | 'EXPECTED';
+  occurrenceDate: string | null;
+  expectedWindow: string | null;
+  titleFi?: string;
+  titleEn?: string;
+  summaryFi?: string;
+  summaryEn?: string;
+  note?: string;
+}
+
+export interface OpsCalendarCandidateAcceptResponse {
+  id: number;
+  status: string;
+  eventId: number;
+  event: {
+    year: number;
+    eventType: string;
+    status: string;
+    occurrenceDate: string | null;
+    expectedWindow: string | null;
+    titleFi: string;
+    titleEn: string;
+    summaryFi: string;
+    summaryEn: string;
+    sourceUrl: string;
+  };
+}
+
+export function listCalendarCandidates(
+  token: string,
+): Promise<OpsCalendarCandidatesResponse> {
+  return opsFetch<OpsCalendarCandidatesResponse>(
+    token,
+    '/ops/console/calendar-candidates',
+  );
+}
+
+export function acceptCalendarCandidate(
+  token: string,
+  id: number,
+  body: OpsCalendarCandidateAcceptInput,
+): Promise<OpsCalendarCandidateAcceptResponse> {
+  return opsFetch<OpsCalendarCandidateAcceptResponse>(
+    token,
+    `/ops/console/calendar-candidates/${id}/accept`,
+    { method: 'POST', body: JSON.stringify(body) },
+  );
+}
+
+export function rejectCalendarCandidate(
+  token: string,
+  id: number,
+  body: { operator: string; note?: string },
+): Promise<{ id: number; status: string; url: string }> {
+  return opsFetch<{ id: number; status: string; url: string }>(
+    token,
+    `/ops/console/calendar-candidates/${id}/reject`,
+    { method: 'POST', body: JSON.stringify(body) },
+  );
+}
