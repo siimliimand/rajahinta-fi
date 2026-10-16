@@ -26,6 +26,13 @@
  *      deterministic, and the source of exactly the pairs the panel
  *      renders, so the FAQPage JSON-LD can mirror the visible block
  *      one-to-one by calling it with the same inputs.
+ *   7. The FAQPage mirror itself (task 2.2): the panel's ld+json script
+ *      parses to the SAME pairs composeProductFaqPairs returns —
+ *      one-to-one, order included, same locale — the degraded block's
+ *      schema drops the price pair with it, and a zero-pair block
+ *      emits no script at all. The script streams inside the panel's
+ *      Suspense boundary (it renders beside the section in the same
+ *      awaited output, the structured-data.test.tsx stub lineage).
  *
  * @module ProductFaqPanelTest
  */
@@ -153,6 +160,24 @@ async function renderPanel(
 /** Pair count via the panel's own pair marker. */
 function pairCount(html: string): number {
   return html.split('product-faq-pair').length - 1;
+}
+
+/** Every FAQPage JSON-LD graph in the rendered HTML, parsed. */
+function faqGraphs(html: string): Array<Record<string, unknown>> {
+  return [
+    ...html.matchAll(
+      /<script[^>]*type="application\/ld\+json"[^>]*>(.*?)<\/script>/g,
+    ),
+  ]
+    .map((m) => JSON.parse(m[1]) as Record<string, unknown>)
+    .filter((graph) => graph['@type'] === 'FAQPage');
+}
+
+/** The one expected FAQPage graph, or a loud failure. */
+function theFaqGraph(html: string): Record<string, unknown> {
+  const graphs = faqGraphs(html);
+  expect(graphs, 'expected exactly one FAQPage script beside the block').toHaveLength(1);
+  return graphs[0] as Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,5 +321,120 @@ describe('composeProductFaqPairs (the task-2.2 seam)', () => {
     expect(composeProductFaqPairs(input, t)).toEqual(
       composeProductFaqPairs(input, t),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The FAQPage mirror — task 2.2. The spec scenario: the schema's pairs
+// match one-to-one the questions and answers rendered in the visible
+// block, in the same language. Asserted here structurally: the script's
+// parsed graph equals composeProductFaqPairs' output for the SAME
+// inputs the panel renders — no invisible or extra schema content.
+// ---------------------------------------------------------------------------
+
+describe('ProductFaqPanel — the FAQPage JSON-LD mirror (task 2.2)', () => {
+  /** The translator the panel itself resolves, at the current testLocale. */
+  async function panelTranslator(): Promise<ProductFaqTranslator> {
+    const { getTranslations } = await import('next-intl/server');
+    return getTranslations({ locale: testLocale, namespace: 'ProductPage' });
+  }
+
+  it('FI: the script parses to exactly the rendered pairs — one-to-one, order included', async () => {
+    const html = await renderPanel(productFixture(), computedPayload());
+
+    const graph = theFaqGraph(html);
+    expect(graph['@context']).toBe('https://schema.org');
+
+    const t = await panelTranslator();
+    const rendered = composeProductFaqPairs(
+      {
+        product: productFixture(),
+        currentBestPriceCents: computedPayload().currentBestPriceCents,
+        locale: testLocale,
+      },
+      t,
+    );
+    expect(graph.mainEntity).toEqual(
+      rendered.map((pair) => ({
+        '@type': 'Question',
+        name: pair.question,
+        acceptedAnswer: { '@type': 'Answer', text: pair.answer },
+      })),
+    );
+    // Order IS the mirror — index by index against the visible block's
+    // composition order (price, ABV, package size).
+    const questions = graph.mainEntity as Array<{ name: string }>;
+    expect(questions.map((q) => q.name)).toEqual(
+      rendered.map((pair) => pair.question),
+    );
+    // The script streams inside the boundary: same chunk as the section.
+    expect(html.indexOf('product-faq-section')).toBeGreaterThan(-1);
+    expect(html.indexOf('application/ld+json')).toBeGreaterThan(
+      html.indexOf('product-faq-section'),
+    );
+  });
+
+  it('EN: the schema pairs are the EN block verbatim — same language, no locale bleed', async () => {
+    testLocale = 'en';
+    const html = await renderPanel(productFixture(), computedPayload());
+
+    const t = await panelTranslator();
+    const rendered = composeProductFaqPairs(
+      {
+        product: productFixture(),
+        currentBestPriceCents: computedPayload().currentBestPriceCents,
+        locale: testLocale,
+      },
+      t,
+    );
+    const questions = theFaqGraph(html).mainEntity as Array<{
+      name: string;
+      acceptedAnswer: { text: string };
+    }>;
+
+    expect(questions.map((q) => q.name)).toEqual(
+      rendered.map((pair) => pair.question),
+    );
+    expect(questions.map((q) => q.acceptedAnswer.text)).toEqual(
+      rendered.map((pair) => pair.answer),
+    );
+    // Every schema string is an EN rendered string — no FI copy leaks.
+    const serialized = JSON.stringify(theFaqGraph(html));
+    for (const question of questions) {
+      expect(serialized).toContain(question.name);
+      expect(serialized).toContain(question.acceptedAnswer.text);
+    }
+    expect(serialized).not.toContain('Paljonko');
+    expect(serialized).not.toContain('Matalin');
+  });
+
+  it('the degraded block (null payload) mirrors its TWO rendered pairs — the price pair absent from the schema too', async () => {
+    const html = await renderPanel(productFixture(), null);
+
+    const t = await panelTranslator();
+    const rendered = composeProductFaqPairs(
+      { product: productFixture(), currentBestPriceCents: null, locale: testLocale },
+      t,
+    );
+    expect(rendered).toHaveLength(2);
+
+    const questions = theFaqGraph(html).mainEntity as Array<{ name: string }>;
+    expect(questions).toHaveLength(2);
+    expect(questions.map((q) => q.name)).toEqual(
+      rendered.map((pair) => pair.question),
+    );
+    // The price question is absent from the schema — never a placeholder.
+    expect(JSON.stringify(questions)).not.toContain('Paljonko');
+  });
+
+  it('a zero-pair block emits NO FAQPage script at all — absent, never an empty shell', async () => {
+    const html = await renderPanel(
+      productFixture({ alcoholByVolume: null, unitVolume: 'not-a-number' }),
+      null,
+    );
+
+    // No section, no heading, and no ld+json script whatsoever.
+    expect(html).toBe('');
+    expect(faqGraphs(html)).toHaveLength(0);
   });
 });

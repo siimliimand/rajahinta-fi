@@ -24,10 +24,17 @@
  * (product-page-cold-latency 4.1): awaited inside the page's Suspense
  * boundary, so the block streams after the shell, never a spinner.
  *
- * The task-2.2 seam: composeProductFaqPairs is exported and pure — the
- * FAQPage JSON-LD builder (lib/seo) MUST call it with the same inputs
- * the panel passes, so the schema's pairs equal the visibly rendered
- * pairs one-to-one and the schema can never exceed visible content.
+ * The task-2.2 seam: composeProductFaqPairs is exported and pure, and
+ * THIS module feeds its output to the FAQPage builder (lib/seo
+ * buildProductFaqJsonLd) — the graph is a structural mirror of the
+ * pairs rendered here, not a DOM scrape, so the schema's pairs equal
+ * the visibly rendered ones one-to-one and the schema can never exceed
+ * visible content. The script renders inside this same Suspense
+ * boundary, right after the visible block (streaming together), and a
+ * zero-pair block emits no section AND no script — the FAQPage node
+ * exists only when the block does (the spec's only-when-rendered rule).
+ *
+ * No new message keys: the graph carries the pair strings verbatim.
  *
  * @module ProductFaqPanel
  */
@@ -40,6 +47,7 @@ import { getTranslations } from 'next-intl/server';
 import type { ProductDetail } from '@/lib/types';
 import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import { formatMoney } from '@/lib/format/money';
+import { buildProductFaqJsonLd } from '@/lib/seo/product-faq-structured-data';
 import type { ProductPriceContextResponse } from '../price-context';
 
 // ---------------------------------------------------------------------------
@@ -163,28 +171,42 @@ export default async function ProductFaqPanel({
     },
     t,
   );
-  if (pairs.length === 0) {
+  // The builder's typed zero-pair outcome IS the absence guard: an
+  // empty block renders neither the section nor a FAQPage script.
+  const faqJsonLd = buildProductFaqJsonLd(pairs);
+  if (faqJsonLd === null) {
     return null;
   }
 
   return (
-    <section
-      data-testid="product-faq-section"
-      className="mb-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
-    >
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-400">
-        {t('faqHeading')}
-      </h2>
-      <dl className="space-y-4">
-        {pairs.map((pair) => (
-          <div key={pair.question} data-testid="product-faq-pair">
-            <dt className="text-sm font-medium text-gray-700">
-              {pair.question}
-            </dt>
-            <dd className="mt-1 text-sm text-gray-500">{pair.answer}</dd>
-          </div>
-        ))}
-      </dl>
-    </section>
+    <>
+      <section
+        data-testid="product-faq-section"
+        className="mb-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
+      >
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-400">
+          {t('faqHeading')}
+        </h2>
+        <dl className="space-y-4">
+          {pairs.map((pair) => (
+            <div key={pair.question} data-testid="product-faq-pair">
+              <dt className="text-sm font-medium text-gray-700">
+                {pair.question}
+              </dt>
+              <dd className="mt-1 text-sm text-gray-500">{pair.answer}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+      {/* ── The FAQPage mirror (seo-aeo-agent-surfaces 2.2) — built from
+          the very pairs array above (structural, never scraped), so it
+          equals the visible block one-to-one in the same order and
+          locale; rendered inside this boundary right after the block,
+          so the schema streams with the content it mirrors. ── */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+      />
+    </>
   );
 }
