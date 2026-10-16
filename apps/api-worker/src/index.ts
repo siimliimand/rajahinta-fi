@@ -67,6 +67,11 @@ import { registerAnalyticsRoutes } from './routes/analytics.routes';
 import { registerOpsRoutes } from './routes/ops.routes';
 import { registerHealthRoutes } from './routes/health.routes';
 import { registerContactRoutes } from './routes/contact.routes';
+// MCP tool surface (change seo-aeo-agent-surfaces, spec
+// agent-tool-surface): closed read-only tool set at /mcp. Its boundary
+// chain (house MCP rate limit → age gate) registers inside the module —
+// the search-routes per-route guard precedent.
+import { registerMcpRoutes } from './mcp/mcp.routes';
 import { dispatchScheduled } from './cron/router';
 import { handleIngestionBatch } from './queues/ingestion.queue';
 import type { IngestionMessageBody } from './queues/ingestion-message';
@@ -209,6 +214,13 @@ export function createApp(): Hono<AppEnv> {
   // rate limit rides the route registration (the session/rotate
   // precedent) inside the route module.
   registerContactRoutes(app);
+
+  // MCP tool surface (change seo-aeo-agent-surfaces, spec
+  // agent-tool-surface) — closed read-only tool set at /mcp behind the
+  // house rate limit and the age gate (registered in the module, search-
+  // routes precedent). No other path's middleware behavior changes: the
+  // registration appends routes only.
+  registerMcpRoutes(app);
 
   return app;
 }
