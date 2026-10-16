@@ -913,6 +913,23 @@ describe('GET /api/v1/products/:id (detail)', () => {
     await expectEnvelope(res, 404, { message: 'Product 999 not found' });
   });
 
+  // seo-aeo-agent-surfaces 1.1: the detail payload carries the row's
+  // product_master.updated_at as an additive ISO field — the frontend's
+  // Product JSON-LD dateModified. The column is NOT NULL with a default,
+  // so the field is always present on served rows; the wire shape stays
+  // otherwise untouched.
+  it('exposes the row updated_at as the additive product.updatedAt ISO field', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products/1', { headers: AGE });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, any>;
+    expect(typeof body.product.updatedAt).toBe('string');
+    expect(body.product.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
   // fi-locale-surface-hardening 2.5 (design D3): the registry display
   // name rides beside the identifier — additive, id fallback, no
   // reordering, no schema change.
