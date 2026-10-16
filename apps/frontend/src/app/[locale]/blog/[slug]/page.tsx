@@ -8,6 +8,7 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import { localizedAlternates } from '@/lib/i18n/localized-paths';
 import NewsletterSubscribeForm from '../../components/NewsletterSubscribeForm';
+import { buildBlogPostJsonLd } from '../article-jsonld';
 import { getServerBlogPost } from '../blog.server';
 import BlogPostBody from '../blog-post-body';
 
@@ -28,6 +29,8 @@ interface BlogPostPageProps {
  * The body renders through the fixed block renderer (paragraphs and
  * bullet lists, all strings escaped) — no markup interpretation of post
  * content. Copy around the post stays neutral per the content policy.
+ * The detail render embeds a BlogPosting JSON-LD graph built from the
+ * stored post fields (seo-aeo-agent-surfaces task 1.2).
  */
 export async function generateMetadata({
   params,
@@ -117,9 +120,16 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
 
   const { post } = outcome;
   const published = formatPublished(post.publishedAt, locale);
+  const jsonLd = buildBlogPostJsonLd(post, locale);
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+      {/* Structured data: BlogPosting, stored post fields only. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+
       <article>
         <h1 className="mb-2 text-2xl font-bold text-primary-700">
           {post.title}
