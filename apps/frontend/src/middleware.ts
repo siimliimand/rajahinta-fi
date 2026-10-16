@@ -18,5 +18,11 @@ export const config = {
   //   ISR key must be the literal URL — a middleware rewrite here would
   //   negotiate the locale and kill the on-demand ISR cache. `/tuotteet`
   //   (the listing) and every other path stay middleware-managed.
-  matcher: '/((?!api|_next|_vercel|.*\\..*|tuotteet/[^/]+).*)',
+  // - the sitemap tree, exactly one segment deep (sitemap-tree-coverage
+  //   4.2): `/sitemaps/<tree>` is a physical Route Handler with the same
+  //   literal-URL ISR requirement (revalidate 900) — left to the
+  //   middleware it is locale-negotiated into a 404 page, since
+  //   `sitemaps` is not a routing pathname. `/sitemap.xml` needs no
+  //   entry: the dot-path file exclusion above already exempts it.
+  matcher: '/((?!api|_next|_vercel|.*\\..*|tuotteet/[^/]+|sitemaps/[^/]+).*)',
 };
