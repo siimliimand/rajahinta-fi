@@ -2,7 +2,13 @@
 # Deploy Staging — Cloudflare Workers (migrate-to-cloudflare task 6.5)
 #
 # A push to `master` produces a green end-to-end staging deploy:
-#   migrate → seed (staging only) → deploy → health gate
+#   migrate → seed (staging only) → deploy API + email → build frontend →
+#   deploy frontend → health gate
+#
+# The frontend OpenNext build runs AFTER the API/email Worker deploys on
+# purpose: `next build` prerenders at build time, and those fetches must hit
+# the NEW API — building against the old one 404s brand-new routes and bakes
+# the degraded states into long-TTL ISR.
 #
 # Spec contract (specs/ci-cd-pipeline): D1 migrations applied to the staging
 # database before seed and rollout; official tax versions seeded; API Worker,
@@ -67,20 +73,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # ── Build ──────────────────────────────────────────────────────────
-      # The api/email Workers are bundled by wrangler itself at deploy time
-      # (their `main` points at TS sources); OpenNext is the only step that
-      # produces a deploy artifact (apps/frontend/.open-next/).
-      - name: Build frontend (OpenNext)
-        env:
-          # Inlined by `next build` (browser → API base); same URL the
-          # health gate verifies below. Required for correct staging builds.
-          NEXT_PUBLIC_API_URL: ${{ vars.STAGING_API_URL }}
-        run: pnpm --filter @rajahinta/frontend run build:worker
-
+      # ── Build workspace packages ────────────────────────────────────────
       # The seed script runs under tsx and imports workspace packages whose
       # entry points are dist/ output — build them before migrate/seed
-      # (wrangler deploys don't need this; the seed path does).
+      # (wrangler deploys don't need this; the seed path does). The api/email
+      # Workers are bundled by wrangler itself at deploy time (their `main`
+      # points at TS sources), so nothing else is built here — the frontend
+      # OpenNext build happens after the Worker deploys (see below).
       - name: Build workspace packages (seed dependency graph)
         run: |
           pnpm --filter @rajahinta/core-domain run build
@@ -106,6 +105,19 @@ jobs:
 
       - name: Deploy email Worker (staging)
         run: pnpm --filter @rajahinta/email-worker exec wrangler deploy --env staging
+
+      # ── Build frontend (after the Worker deploys — ordering matters) ───
+      # `next build` prerenders at build time, so those fetches must hit the
+      # NEW API: building before the API deploy made brand-new routes 404
+      # and baked the degraded states into long-TTL ISR (task 6.2 record).
+      # OpenNext is the only step producing a deploy artifact
+      # (apps/frontend/.open-next/), consumed by the deploy right below.
+      - name: Build frontend (OpenNext)
+        env:
+          # Inlined by `next build` (browser → API base); same URL the
+          # health gate verifies below. Required for correct staging builds.
+          NEXT_PUBLIC_API_URL: ${{ vars.STAGING_API_URL }}
+        run: pnpm --filter @rajahinta/frontend run build:worker
 
       - name: Deploy frontend Worker (staging)
         run: pnpm --filter @rajahinta/frontend exec opennextjs-cloudflare deploy --env staging
