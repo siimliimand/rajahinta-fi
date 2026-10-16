@@ -1508,10 +1508,12 @@
     "violations": "{count, plural, one {# content-policy violation found} other {# content-policy violations found}}"
   },
   "ProductPage": {
-    "metaTitle": "{name} — price information",
+    "metaTitle": "{name} ({details}) — price information",
     "metaDescription": "{name} ({details}) — collected retail prices across merchants and a landed-cost calculator for Finland.",
     "metaDescriptionFallback": "Product price information and landed-cost calculator.",
     "notFoundTitle": "Product not found",
+    "breadcrumbHomeLabel": "Home",
+    "breadcrumbCatalogLabel": "Products",
     "masterTitle": "Product details",
     "brandLabel": "Brand",
     "categoryLabel": "Category",

@@ -941,6 +941,11 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
         regulatoryClassification: product.regulatoryClassification,
         depositSystemStatus: product.depositSystemStatus ?? false,
         ean: product.ean,
+        // Additive SEO field (seo-aeo-agent-surfaces 1.1): the row's
+        // product_master.updated_at — the product page's Product JSON-LD
+        // dateModified source. One extra product key; every other field
+        // and the offers array are untouched.
+        updatedAt: product.updatedAt.toISOString(),
       },
       offers: offers.map((o) => ({
         id: o.id,
