@@ -104,24 +104,20 @@ describe('GET/POST /ops/console/governance', () => {
 });
 
 describe('/ops/console/confirmations', () => {
-  it('fails tax-review approve/reject closed with 503 (no D1 store)', async () => {
+  it('fails tax-review reject closed with 503 (no review store to record the rejection)', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
     const env = authedEnv(d1);
 
-    for (const action of ['approve', 'reject']) {
-      const res = await request(
-        app,
-        env,
-        `/ops/console/confirmations/tax/abc-123/${action}`,
-        {
-          method: 'POST',
-          headers: JSON_HDRS,
-          body: JSON.stringify({ operator: 'ops-1' }),
-        },
-      );
-      await expectEnvelope(res, 503, { error: 'StoreUnavailable' });
-    }
+    // Reject still has no durable resolution record (approve is the
+    // audited versioned-publication confirmation gate since
+    // calendar-event-automation 3.2 — see the dataset-confirmation suite).
+    const res = await request(app, env, '/ops/console/confirmations/tax/abc-123/reject', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ operator: 'ops-1' }),
+    });
+    await expectEnvelope(res, 503, { error: 'StoreUnavailable' });
   });
 
   it('lists pending consumption norms by version (tax reviews fail-closed empty) and publishes via confirm: 404 unknown, 409 terminal, audit', async () => {
