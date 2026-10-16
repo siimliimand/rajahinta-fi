@@ -203,6 +203,14 @@
 //                 ALKO_PRICE_LIST EXPECTED rows through the pure
 //                 core-domain generator, skipping any year that already
 //                 carries an Alko row (idempotent, re-runnable).
+//   0 4 * * *     Calendar source-watcher — daily, off-peak 04:00 UTC
+//                 (task 3.3, change calendar-event-automation;
+//                 src/cron/calendar-source-watcher.ts): polls the verified
+//                 feeds and inserts PENDING review candidates (URL-deduped,
+//                 fail-open, never public data). Off-peak UTC by design:
+//                 feed freshness is day-grained and the ops review queue
+//                 is read during Helsinki working hours, which 04:00 UTC
+//                 precedes in both EET and EEST.
 //
 // TIMEZONE NOTE: wrangler crons are UTC-only, so the two daily jobs
 // fire at their BullMQ CLOCK HOURS in UTC, i.e. two hours earlier than
@@ -224,6 +232,7 @@
       "0 */6 * * *",
       "0 2 * * *",
       "30 3 * * *",
+      "0 4 * * *",
       "0 5 1 * *",
       "0 6 * * 1",
       "0 0 1 1 *"
