@@ -184,6 +184,13 @@ vi.mock('../products/[id]/components/ProductPriceContextLine', () => ({
   default: () =>
     React.createElement('p', { 'data-testid': 'price-context-line' }, 'PRICE-CONTEXT-SHELL'),
 }));
+// The deterministic Q&A block (seo-aeo-agent-surfaces 2.1) joins the
+// streaming sections — same marker treatment, its contract lives in
+// ProductFaqPanel.test.tsx.
+vi.mock('../products/[id]/components/ProductFaqPanel', () => ({
+  default: () =>
+    React.createElement('section', { 'data-testid': 'product-faq-section' }, 'FAQ-SHELL'),
+}));
 
 vi.mock('@/i18n/navigation', () => ({
   Link: (props: { href?: unknown; children?: React.ReactNode } & Record<string, unknown>) => {
