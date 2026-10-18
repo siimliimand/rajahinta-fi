@@ -61,7 +61,12 @@
  *   and the confirmation fans out fail-open (alerts, blog drafts, and
  *   the CONFIRMED FI_EXCISE_CHANGE calendar event for a new effective
  *   year).
- * - The correction queue's writes still reject with 503 (no D1 table).
+ * - The correction queue (task 2.1, change durable-corrections-store) is
+ *   DURABLE now: the list serves the D1CorrectionRepository's
+ *   `corrections` rows newest first, open persists through the existing
+ *   zod schema, and resolve maps the client's optional note to the stored
+ *   resolution (404 on unknown ids). Open and resolve audit through
+ *   WorkerAuditService — the former correctionsUnavailable() 503 is gone.
  * - Source governance (task 2.2, change durable-source-governance-store)
  *   is DURABLE now: the list joins the merchant registry with the
  *   D1SourceGovernanceRepository's aggregated `checkPermission` (never
@@ -116,6 +121,7 @@ import { D1BlogPostRepository } from '../../../../packages/data-platform/src/rep
 import type { BlogPostKind } from '../../../../packages/data-platform/src/abstracts';
 import { D1ShopReportRepository } from '../../../../packages/data-platform/src/repositories/d1/shop-report.repository';
 import { D1BlacklistRepository } from '../../../../packages/data-platform/src/repositories/d1/blacklist.repository';
+import { D1CorrectionRepository } from '../../../../packages/data-platform/src/repositories/d1/corrections.repository';
 import type { ShopReportRecord } from '../../../../packages/data-platform/src/abstracts';
 import type { BlacklistEntryRecord } from '../../../../packages/data-platform/src/abstracts';
 import {
@@ -1840,19 +1846,9 @@ async function rejectTaxReview(c: Context<AppEnv>): Promise<Response> {
 }
 
 // ---------------------------------------------------------------------------
-// Correction queue — fail-closed (no D1 corrections table)
+// Correction queue — durable D1 store (task 2.1, change
+// durable-corrections-store; OpsCorrectionQueueService semantics)
 // ---------------------------------------------------------------------------
-
-function correctionsUnavailable(): never {
-  throw new ApiHttpError(503, {
-    statusCode: 503,
-    message:
-      'The correction queue is unavailable: corrections have no D1 store yet ' +
-      '(migrate-to-cloudflare 2.5). Failing closed rather than serving a queue ' +
-      'that cannot persist.',
-    error: 'StoreUnavailable',
-  });
-}
 
 const createCorrectionSchema = z.object({
   targetType: z.enum(['calculation', 'data_point'], {
@@ -1880,25 +1876,84 @@ const createCorrectionSchema = z.object({
     .max(128, 'operator must be a non-empty string (max 128 chars)'),
 });
 
+/** GET /ops/console/corrections — the full queue, newest first. */
 async function listCorrections(c: Context<AppEnv>): Promise<Response> {
-  void c;
-  correctionsUnavailable();
+  const items = await new D1CorrectionRepository(c.env.DB).findAll();
+  return c.json({ items, total: items.length });
 }
 
+/** POST /ops/console/corrections — open a correction flag (audited). */
 async function openCorrection(c: Context<AppEnv>): Promise<Response> {
   const parsed = createCorrectionSchema.safeParse(await readBody(c));
   if (!parsed.success) {
     const message = parsed.error.issues.map((issue) => issue.message).join('; ');
     throw new ApiHttpError(400, message);
   }
-  correctionsUnavailable();
+
+  const created = await new D1CorrectionRepository(c.env.DB).create({
+    targetType: parsed.data.targetType,
+    targetId: parsed.data.targetId,
+    reason: parsed.data.reason,
+  });
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'correction',
+    entityId: String(created.id),
+    action: 'created',
+    author: parsed.data.operator,
+    reason: created.reason,
+    newValue: {
+      targetType: created.targetType,
+      targetId: created.targetId,
+      status: created.status,
+    },
+  });
+
+  return c.json(created);
 }
 
+/**
+ * POST /ops/console/corrections/:id/resolve — close a flag (audited).
+ * The console's optional note IS the stored resolution: absent stays NULL
+ * (the column and DTO carry null natively — unlike the Nest service, no
+ * default text is substituted). The audit reason keeps the console's
+ * non-empty convention with a fallback when no note was given.
+ */
 async function resolveCorrection(c: Context<AppEnv>): Promise<Response> {
-  parseIntParam(c, 'id');
+  const id = parseIntParam(c, 'id');
   const dto = await readBody(c);
-  validateOperator(dto);
-  correctionsUnavailable();
+  const actor = requireOperator(dto);
+
+  const note = typeof dto.note === 'string' ? dto.note : null;
+  // The mirror port types `resolution` as `string` (application-api
+  // parity, where the service always substitutes a default note); the
+  // console contract keeps an absent note NULL, which the mapper and
+  // column both persist natively.
+  const resolved = await new D1CorrectionRepository(c.env.DB).resolve(
+    id,
+    note as string,
+  );
+  if (resolved === null) {
+    throw new ApiHttpError(404, `Correction ${id} not found`);
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'correction',
+    entityId: String(id),
+    action: 'updated',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Correction resolved via operator console',
+    previousValue: { status: 'open' },
+    newValue: {
+      status: resolved.status,
+      resolution: resolved.resolution,
+      resolvedAt: resolved.resolvedAt,
+    },
+  });
+
+  return c.json({ id: resolved.id, status: resolved.status });
 }
 
 // ---------------------------------------------------------------------------

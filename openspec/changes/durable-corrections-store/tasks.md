@@ -9,7 +9,7 @@
 
 ## 2. Console routes
 
-- [ ] 2.1 Rewire the three `/ops/console/corrections` handlers in `ops.routes.ts` to `D1CorrectionRepository` and delete `correctionsUnavailable()`: list serves `CorrectionListResponse` newest-first, open persists through the existing zod schema, resolve maps the optional `note` to the stored resolution and 404s unknown ids; open and resolve append `WorkerAuditService` events (operator, action, target, before/after), the list stays unaudited; update route tests to pin the success shapes the console renders, the audit rows, the 400/404 paths, and the removed 503 <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [apps/api-worker/src/routes/ops.routes.ts, apps/api-worker/src/routes/__tests__/ops.routes.test.ts] -->
+- [x] 2.1 Rewire the three `/ops/console/corrections` handlers in `ops.routes.ts` to `D1CorrectionRepository` and delete `correctionsUnavailable()`: list serves `CorrectionListResponse` newest-first, open persists through the existing zod schema, resolve maps the optional `note` to the stored resolution and 404s unknown ids; open and resolve append `WorkerAuditService` events (operator, action, target, before/after), the list stays unaudited; update route tests to pin the success shapes the console renders, the audit rows, the 400/404 paths, and the removed 503 <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [apps/api-worker/src/routes/ops.routes.ts, apps/api-worker/src/routes/__tests__/ops.routes.test.ts] -->
 
 ## 3. Documentation and verification
 

@@ -10,7 +10,8 @@
  * - ops-dataset-confirmation.service.test.ts (queue shape, tax review
  *   resolution, audit write),
  * - ops-correction-queue.service.test.ts / ops-audit-trail.service.test.ts
- *   (fail-closed queue; audit trail reads with limit clamps).
+ *   (correction queue — now the durable D1 queue, task 2.1 change
+ *   durable-corrections-store; audit trail reads with limit clamps).
  *
  * Task 3.2 (change alko-reference-matching-pipeline) adds the
  * match-review surface to its siblings: the full queue lifecycle driven
@@ -42,8 +43,10 @@ import {
 } from './harness';
 import { WorkerAuditService } from '../../adapters/audit';
 import { D1ConsumptionNormsRepository } from '../../../../../packages/data-platform/src/repositories/d1/consumption-norms.repository';
+import { D1CorrectionRepository } from '../../../../../packages/data-platform/src/repositories/d1/corrections.repository';
 import { D1MatchReviewRepository } from '../../../../../packages/data-platform/src/repositories/d1/match-review.repository';
 import { D1ReferenceLinkRepository } from '../../../../../packages/data-platform/src/repositories/d1/reference-link.repository';
+import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
 import type { MatchReviewEnqueueInput } from '../../../../../packages/data-platform/src/abstracts';
 
 const OPS = { authorization: `Bearer ${FAKE_OPS_TOKEN}` };
@@ -204,16 +207,79 @@ describe('/ops/console/confirmations', () => {
   });
 });
 
-describe('/ops/console/corrections — fail-closed queue', () => {
-  it('rejects list, open, and resolve with 503 while the store has no D1 table', async () => {
+// ---------------------------------------------------------------------------
+// Correction queue (task 2.1, change durable-corrections-store) — the
+// durable D1 queue replaces the former fail-closed 503 stub: the list
+// serves the exact CorrectionItem wire the console renders, open/resolve
+// persist through D1CorrectionRepository and audit through
+// WorkerAuditService, validation stays a 400, unknown ids 404.
+// ---------------------------------------------------------------------------
+
+/** The correction queue's audit rows (governance-suite precedent). */
+async function correctionAuditEvents(
+  d1: D1DatabaseLike,
+): Promise<Awaited<ReturnType<WorkerAuditService['queryChanges']>>> {
+  const trail = await new WorkerAuditService(d1).queryChanges({ limit: 50 });
+  return trail.filter((entry) => entry.entityType === 'correction');
+}
+
+describe('/ops/console/corrections — durable queue', () => {
+  it('serves the persisted queue newest first — open AND resolved rows, exact CorrectionItem wire', async () => {
+    const { d1 } = openMigratedD1();
+    const repo = new D1CorrectionRepository(d1);
+    const oldest = await repo.create({
+      targetType: 'calculation',
+      targetId: 11,
+      reason: 'oldest flag',
+    });
+    const newest = await repo.create({
+      targetType: 'data_point',
+      targetId: 13,
+      reason: 'newest flag',
+    });
+    const resolved = await repo.resolve(oldest.id, 'fixed the figure');
+    expect(resolved).not.toBeNull();
+
+    const app = buildApp();
+    const res = await request(app, authedEnv(d1), '/ops/console/corrections', {
+      headers: OPS,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, any>;
+    expect(body.total).toBe(2);
+    expect(body.items.map((item: Record<string, any>) => item.id)).toEqual([
+      newest.id,
+      oldest.id,
+    ]);
+    // The exact keys the console renders (byte-identical client contract).
+    expect(body.items[0]).toEqual({
+      id: newest.id,
+      targetType: 'data_point',
+      targetId: 13,
+      reason: 'newest flag',
+      status: 'open',
+      createdAt: newest.createdAt,
+      resolvedAt: null,
+      resolution: null,
+    });
+    expect(body.items[1]).toEqual({
+      id: oldest.id,
+      targetType: 'calculation',
+      targetId: 11,
+      reason: 'oldest flag',
+      status: 'resolved',
+      createdAt: oldest.createdAt,
+      resolvedAt: resolved!.resolvedAt,
+      resolution: 'fixed the figure',
+    });
+  });
+
+  it('opens a correction: persists an open row and appends the created audit event', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
     const env = authedEnv(d1);
 
-    const list = await request(app, env, '/ops/console/corrections', { headers: OPS });
-    await expectEnvelope(list, 503, { error: 'StoreUnavailable' });
-
-    const open = await request(app, env, '/ops/console/corrections', {
+    const res = await request(app, env, '/ops/console/corrections', {
       method: 'POST',
       headers: JSON_HDRS,
       body: JSON.stringify({
@@ -223,9 +289,45 @@ describe('/ops/console/corrections — fail-closed queue', () => {
         operator: 'ops-1',
       }),
     });
-    await expectEnvelope(open, 503, { error: 'StoreUnavailable' });
+    expect(res.status).toBe(200);
+    const created = (await res.json()) as Record<string, any>;
+    expect(created).toMatchObject({
+      targetType: 'calculation',
+      targetId: 5,
+      reason: 'figures look wrong',
+      status: 'open',
+      resolvedAt: null,
+      resolution: null,
+    });
+    expect(created.id).toBeGreaterThan(0);
+    expect(created.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
-    // Validation still precedes the store check (controller parity).
+    // The store really persisted (durable, not echoed).
+    const rows = await new D1CorrectionRepository(d1).findAll();
+    expect(rows.map((row) => row.id)).toEqual([created.id]);
+
+    const events = await correctionAuditEvents(d1);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      entityType: 'correction',
+      entityId: String(created.id),
+      action: 'created',
+      author: 'ops-1',
+      reason: 'figures look wrong',
+    });
+    expect(events[0]!.previousValue).toBeUndefined();
+    expect(events[0]!.newValue).toEqual({
+      targetType: 'calculation',
+      targetId: 5,
+      status: 'open',
+    });
+  });
+
+  it('rejects invalid open payloads with 400 before the store or trail is touched', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = authedEnv(d1);
+
     const invalid = await request(app, env, '/ops/console/corrections', {
       method: 'POST',
       headers: JSON_HDRS,
@@ -240,12 +342,168 @@ describe('/ops/console/corrections — fail-closed queue', () => {
       message: expect.stringContaining('targetType must be'),
     });
 
-    const resolve = await request(app, env, '/ops/console/corrections/5/resolve', {
+    const noOperator = await request(app, env, '/ops/console/corrections', {
       method: 'POST',
       headers: JSON_HDRS,
-      body: JSON.stringify({ operator: 'ops-1' }),
+      body: JSON.stringify({
+        targetType: 'calculation',
+        targetId: 5,
+        reason: 'figures look wrong',
+      }),
     });
-    await expectEnvelope(resolve, 503, { error: 'StoreUnavailable' });
+    await expectEnvelope(noOperator, 400, {
+      message: 'operator must be a non-empty string (max 128 chars)',
+    });
+
+    // Nothing persisted, nothing audited.
+    expect(await new D1CorrectionRepository(d1).findAll()).toEqual([]);
+    expect(await correctionAuditEvents(d1)).toEqual([]);
+  });
+
+  it('resolves with a note: stores it as the resolution, returns { id, status }, audits before/after', async () => {
+    const { d1 } = openMigratedD1();
+    const repo = new D1CorrectionRepository(d1);
+    const created = await repo.create({
+      targetType: 'data_point',
+      targetId: 7,
+      reason: 'unit mismatch',
+    });
+    const app = buildApp();
+    const env = authedEnv(d1);
+
+    const res = await request(
+      app,
+      env,
+      `/ops/console/corrections/${created.id}/resolve`,
+      {
+        method: 'POST',
+        headers: JSON_HDRS,
+        body: JSON.stringify({ operator: 'ops-1', note: 'corrected the unit' }),
+      },
+    );
+    expect(res.status).toBe(200);
+    // Exact client contract (ops/api.ts resolveCorrection).
+    expect(await res.json()).toEqual({ id: created.id, status: 'resolved' });
+
+    const rows = await repo.findAll();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      status: 'resolved',
+      resolution: 'corrected the unit',
+    });
+    expect(rows[0]!.resolvedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    const events = await correctionAuditEvents(d1);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      entityType: 'correction',
+      entityId: String(created.id),
+      action: 'updated',
+      author: 'ops-1',
+      reason: 'corrected the unit',
+    });
+    expect(events[0]!.previousValue).toEqual({ status: 'open' });
+    expect(events[0]!.newValue).toEqual({
+      status: 'resolved',
+      resolution: 'corrected the unit',
+      resolvedAt: rows[0]!.resolvedAt,
+    });
+  });
+
+  it('resolves without a note: stores NULL resolution and audits the fallback reason', async () => {
+    const { d1 } = openMigratedD1();
+    const repo = new D1CorrectionRepository(d1);
+    const created = await repo.create({
+      targetType: 'calculation',
+      targetId: 3,
+      reason: 'stale price',
+    });
+    const app = buildApp();
+    const env = authedEnv(d1);
+
+    const res = await request(
+      app,
+      env,
+      `/ops/console/corrections/${created.id}/resolve`,
+      {
+        method: 'POST',
+        headers: JSON_HDRS,
+        body: JSON.stringify({ operator: 'ops-1' }),
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: created.id, status: 'resolved' });
+
+    const rows = await repo.findAll();
+    expect(rows[0]!.status).toBe('resolved');
+    expect(rows[0]!.resolution).toBeNull();
+    expect(rows[0]!.resolvedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    const events = await correctionAuditEvents(d1);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.action).toBe('updated');
+    expect(events[0]!.author).toBe('ops-1');
+    expect(events[0]!.reason).toBe('Correction resolved via operator console');
+    expect(events[0]!.newValue).toMatchObject({ status: 'resolved', resolution: null });
+  });
+
+  it('404s an unknown id without writing an audit event', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = authedEnv(d1);
+
+    const res = await request(app, env, '/ops/console/corrections/999/resolve', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ operator: 'ops-1', note: 'nobody home' }),
+    });
+    await expectEnvelope(res, 404, { message: 'Correction 999 not found' });
+    expect(await correctionAuditEvents(d1)).toEqual([]);
+  });
+
+  it('no longer fails closed — list, open, and resolve serve from the D1 store (the 503 path is gone)', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = authedEnv(d1);
+
+    // The former pins: all three routes 503'd with StoreUnavailable.
+    const open = await request(app, env, '/ops/console/corrections', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({
+        targetType: 'calculation',
+        targetId: 5,
+        reason: 'figures look wrong',
+        operator: 'ops-1',
+      }),
+    });
+    expect(open.status).not.toBe(503);
+    expect(open.status).toBe(200);
+    const opened = (await open.json()) as Record<string, any>;
+
+    const list = await request(app, env, '/ops/console/corrections', { headers: OPS });
+    expect(list.status).not.toBe(503);
+    expect(list.status).toBe(200);
+    const listed = (await list.json()) as Record<string, any>;
+    expect(listed.total).toBe(1);
+    expect(listed.items[0].id).toBe(opened.id);
+
+    const resolve = await request(
+      app,
+      env,
+      `/ops/console/corrections/${opened.id}/resolve`,
+      {
+        method: 'POST',
+        headers: JSON_HDRS,
+        body: JSON.stringify({ operator: 'ops-1' }),
+      },
+    );
+    expect(resolve.status).not.toBe(503);
+    expect(resolve.status).toBe(200);
+    expect((await resolve.json()) as Record<string, any>).toEqual({
+      id: opened.id,
+      status: 'resolved',
+    });
   });
 });
 
