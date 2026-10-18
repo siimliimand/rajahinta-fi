@@ -61,6 +61,15 @@ capability (the enumeration endpoint's truthful lastmod). This change SHALL NOT
 introduce a competing lastmod contract; verification confirms the structured-data
 work composes with the existing sitemap tree without touching it.
 
+#### Scenario: Structured-data work leaves the sitemap tree untouched
+
+- **WHEN** the change's frontend modifications are applied and the sitemap suites
+  run
+- **THEN** no source under the sitemap index tree (`apps/frontend/src/app/sitemap.xml/**`,
+  `apps/frontend/src/app/sitemaps/**`, `apps/frontend/src/lib/sitemap-xml.ts`,
+  `apps/frontend/src/lib/sitemap-entries.ts`) is modified and the sitemap suites
+  pass unchanged
+
 ### Requirement: Enriched localized product metadata
 
 Product-page meta title and description SHALL be composed from stored attributes
