@@ -1610,25 +1610,28 @@ executes the staging verification; the **platform engineer** owns the
 ### 11.2 Enabling the toggle (staging first, then production)
 
 Cloudflare dashboard → the domain serving the site's HTML → **Agent
-Readiness > WebMCP** → enable, with the **Site MCP Server** pack. Set
-the pack's MCP server URL (`data-mcp-url`) to the API origin's
-endpoint:
+Readiness > WebMCP** → enable, with the **Site MCP Server** pack. The
+pack's MCP server URL field (`data-mcp-url`) accepts a **same-origin
+path only** — full URLs are rejected by the dashboard — and it is set
+to `mcp` (the frontend's proxy route below):
 
-| Environment | `data-mcp-url` |
-|---|---|
-| Staging | `$STAGING_API_URL/mcp` |
-| Production | `https://api.rajahinta.fi/mcp` |
+| Environment | `data-mcp-url` | Serves |
+|---|---|---|
+| Staging | `mcp` | the staging frontend's `/mcp` proxy route |
+| Production | `mcp` | `https://rajahinta.fi/mcp` — the frontend proxy route |
 
-The same-origin `/mcp` default fits sites that serve their own MCP
-endpoint from the pages' origin; here the HTML and `/mcp` live on
-different origins (frontend Worker vs api-worker), so the absolute URL
-above is the value to enter. Nothing is deployed at the origin: the
-endpoint shipped with the api-worker (change `seo-aeo-agent-surfaces`),
-and the toggle plus pack are edge configuration only. Browser-side
-cross-origin tool calls from the bridge are covered by the API's
-existing CORS configuration — the site origin must be among the
-`CORS_ORIGIN` entries, which it already is wherever the frontend's
-browser-side API client works (same origin list).
+The proxy exists because two facts rule out pointing the bridge
+straight at the api-worker: the dashboard's path-only validation, and
+the `age_confirmed` cookie being host-only (written by
+`document.cookie` without a `Domain` attribute), so a cross-origin
+bridge fetch could never carry the visitor's confirmation. The
+frontend's `app/mcp/route.ts` accepts the same-origin POST, reads the
+visitor's cookie, and either answers the API's own 403
+`AGE_GATE_REQUIRED` envelope (unconfirmed — nothing is called) or
+forwards the JSON-RPC body to the api-worker's `/mcp` with the server
+confirmation token, streaming the response back with the rate-limit
+`Retry-After` and `x-request-id` headers intact. The same-origin
+default `/mcp` would have 404'd; the proxy is that path made real.
 
 Enable staging first, verify per §11.3, then repeat in production. The
 production enablement is a deliberate act — record who, when, and for
@@ -1728,6 +1731,15 @@ simple confirmation; the `age_confirmed` cookie is the equivalent).
    `-32602` — whose message names the valid tools.
 
 7. **Rate limit — the 31st call in a minute 429s.** The `MCP` profile
+8. **Same-origin proxy path (what the bridge actually calls).** Repeat
+   steps 2–4 against the FRONTEND origin's `/mcp` (`https://rajahinta.fi/mcp`
+   in production, the staging frontend host in staging) with the
+   `age_confirmed` cookie a confirmed browser session carries instead of
+   the header: the responses must match the API's shapes exactly — the
+   gate envelope unconfirmed, the closed three-tool list confirmed. This
+   is the path the `data-mcp-url` above points the bridge at; if it
+   works here but not in a WebMCP-capable client, the remaining suspect
+   is the bridge, not the endpoint.
    allows 30 requests per rolling 60 s per IP, and every POST counts,
    including the 403s of steps 2 and 5. Wait out the window, then fire
    31:
