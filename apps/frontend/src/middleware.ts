@@ -24,5 +24,9 @@ export const config = {
   //   middleware it is locale-negotiated into a 404 page, since
   //   `sitemaps` is not a routing pathname. `/sitemap.xml` needs no
   //   entry: the dot-path file exclusion above already exempts it.
-  matcher: '/((?!api|_next|_vercel|.*\\..*|tuotteet/[^/]+|sitemaps/[^/]+).*)',
+  // - `/mcp` (webmcp follow-up): a physical POST Route Handler — the
+  //   same-origin path the Cloudflare WebMCP bridge calls. Locale
+  //   negotiation turned it into a `[locale]`-tree 404; JSON-RPC has no
+  //   locale.
+  matcher: '/((?!api|_next|_vercel|.*\\..*|tuotteet/[^/]+|sitemaps/[^/]+|mcp).*)',
 };

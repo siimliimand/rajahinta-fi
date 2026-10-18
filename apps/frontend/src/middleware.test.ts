@@ -37,8 +37,15 @@ describe('middleware matcher (fi-path-isr 3.2)', () => {
 
   it('pins the matcher literal (drift here is a routing change)', () => {
     expect(config.matcher).toBe(
-      '/((?!api|_next|_vercel|.*\\..*|tuotteet/[^/]+|sitemaps/[^/]+).*)',
+      '/((?!api|_next|_vercel|.*\\..*|tuotteet/[^/]+|sitemaps/[^/]+|mcp).*)',
     );
+  });
+
+  it('excludes the /mcp proxy route from negotiation (webmcp follow-up)', () => {
+    expect(matcher.test('/mcp')).toBe(false);
+    // Same-origin JSON-RPC POST — no locale, no negotiation round-trip.
+    // A middleware rewrite here 404'd the live endpoint (found in
+    // production, same failure class as the sitemap tree above).
   });
 
   it('excludes the FI product detail tree from negotiation', () => {
