@@ -13,5 +13,5 @@
 
 ## 3. Documentation and verification
 
-- [ ] 3.1 Docs: ARCHITECTURE.md operator-console description and TECHNICAL-ASSESSMENT.md open-debt note stop describing the correction-queue gap and record the remaining migrate-to-cloudflare 2.5 debts (tax rate-review store; public corrections endpoint on the worker) <!-- agent: platform-engineer.fast, depends_on: [2.1], touches: [ARCHITECTURE.md, docs/TECHNICAL-ASSESSMENT.md] -->
+- [x] 3.1 Docs: ARCHITECTURE.md operator-console description and TECHNICAL-ASSESSMENT.md open-debt note stop describing the correction-queue gap and record the remaining migrate-to-cloudflare 2.5 debts (tax rate-review store; public corrections endpoint on the worker) <!-- agent: platform-engineer.fast, depends_on: [2.1], touches: [ARCHITECTURE.md, docs/TECHNICAL-ASSESSMENT.md] -->
 - [ ] 3.2 Full verification: typecheck, lint, unit suites (data-platform, api-worker, application-api, frontend), test:d1 — D1 suites are FTS5-blocked on the operator host, CI arbitrates — plus content lint; confirm staging applies migration 0040 in the deploy pipeline <!-- agent: platform-engineer.build, depends_on: [1.2, 2.1, 3.1], touches: [] -->
