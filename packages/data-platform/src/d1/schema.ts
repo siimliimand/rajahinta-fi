@@ -2882,6 +2882,93 @@ export const calendarEventCandidates = sqliteTable(
 );
 
 /**
+ * Correction target kind — the flagged artifact's vocabulary, the same
+ * closed set the ops-console open route validates with its zod enum
+ * (`'calculation' | 'data_point'`).
+ */
+export const CORRECTION_TARGET_TYPES = ['calculation', 'data_point'] as const;
+
+export type CorrectionTargetType = (typeof CORRECTION_TARGET_TYPES)[number];
+
+/** SQL IN-list fragment rendered from the exported value set (the CALENDAR_CANDIDATE_STATUS_VALUES precedent). */
+const CORRECTION_TARGET_TYPE_VALUES = sql.raw(
+  `(${CORRECTION_TARGET_TYPES.map((t) => `'${t}'`).join(', ')})`,
+);
+
+/**
+ * Correction review status — the queue item's two-state lifecycle: open
+ * is the operator's inbox, resolved is the terminal decision. The
+ * open → resolved transition is forward-only and enforced by the
+ * repository layer (resolve updates the row in place); the CHECK makes
+ * a foreign value unrepresentable at rest.
+ */
+export const CORRECTION_STATUSES = ['open', 'resolved'] as const;
+
+export type CorrectionStatus = (typeof CORRECTION_STATUSES)[number];
+
+/** SQL IN-list fragment rendered from the exported value set (the CALENDAR_CANDIDATE_STATUS_VALUES precedent). */
+const CORRECTION_STATUS_VALUES = sql.raw(
+  `(${CORRECTION_STATUSES.map((s) => `'${s}'`).join(', ')})`,
+);
+
+/**
+ * Corrections — the operator's durable review queue (task 1.1, change
+ * durable-corrections-store). One row per flagged calculation or data
+ * point, mirroring the CorrectionItem wire DTO
+ * (packages/application-api/src/correction/correction.dto.ts) one-to-one
+ * so the D1 repository is a dumb mapper, not a translator — the durable
+ * store behind `ICorrectionRepository`. migrate-to-cloudflare 2.5
+ * deferred this port; serving the queue from a Worker isolate would be
+ * restart-volatile, so the routes fail closed until this table existed.
+ *
+ * There is no resolved_by column, on purpose: CorrectionItem carries no
+ * resolver field and data minimization forbids columns "for later".
+ * Operator attribution rides the durable audit trail (the
+ * correction_opened / correction_resolved WorkerAuditService events).
+ *
+ * resolved_at/resolution are NULL while open; resolve fills both in one
+ * UPDATE (the transition is repository-enforced, forward-only). The
+ * status CHECK is the last-line guarantee for raw SQL paths, exactly as
+ * in the calendar_events family.
+ *
+ * corrections_queue_idx serves the console's queue read with one
+ * composite index: filter on the leading status column, order by
+ * created_at newest first.
+ */
+export const corrections = sqliteTable(
+  'corrections',
+  {
+    id: integer('id').primaryKey(),
+    /** The kind of artifact flagged — {@link CORRECTION_TARGET_TYPES} (CHECK below). */
+    targetType: text('target_type', { length: 16 }).notNull(),
+    /** Identifier of the target record. */
+    targetId: integer('target_id').notNull(),
+    /** Human-readable reason supplied at creation time. */
+    reason: text('reason').notNull(),
+    /** open (inbox) or resolved (terminal) — {@link CORRECTION_STATUSES} (CHECK below). */
+    status: text('status', { length: 16 }).notNull().default('open'),
+    /** Resolution notes recorded when the flag was closed, null while open. */
+    resolution: text('resolution'),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+    /** ISO-8601 timestamp of resolution, null while open. */
+    resolvedAt: text('resolved_at'),
+  },
+  (table) => [
+    // The queue read: WHERE status = 'open' ORDER BY created_at DESC
+    // (newest first) in one indexed query.
+    index('corrections_queue_idx').on(table.status, table.createdAt),
+    check(
+      'corrections_target_type_check',
+      sql`${table.targetType} IN ${CORRECTION_TARGET_TYPE_VALUES}`,
+    ),
+    check(
+      'corrections_status_check',
+      sql`${table.status} IN ${CORRECTION_STATUS_VALUES}`,
+    ),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -2934,4 +3021,5 @@ export const d1Schema = {
   merchantReliabilityAggregates,
   calendarEvents,
   calendarEventCandidates,
+  corrections,
 };

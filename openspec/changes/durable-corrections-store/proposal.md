@@ -10,7 +10,7 @@ The port contract already exists: the `ICorrectionRepository` port (`create` / `
 
 ### Durable store
 
-- New D1 migration `0039_corrections.sql` (+ `d1/schema.ts` table): `corrections` with id (INTEGER PK autoincrement), target_type (TEXT, CHECK `calculation | data_point`), target_id (INTEGER NOT NULL), reason (TEXT NOT NULL), status (TEXT, CHECK `open | resolved`, default `open`), resolution (TEXT NULL), created_at and resolved_at (ISO-8601 TEXT), plus a `(status, created_at)` index for the queue listing. Column set mirrors `CorrectionItem` exactly — no resolver column: operator attribution rides the durable audit trail (data minimization; the DTO carries no resolver field).
+- New D1 migration `0040_corrections.sql` (+ `d1/schema.ts` table): `corrections` with id (INTEGER PK autoincrement), target_type (TEXT, CHECK `calculation | data_point`), target_id (INTEGER NOT NULL), reason (TEXT NOT NULL), status (TEXT, CHECK `open | resolved`, default `open`), resolution (TEXT NULL), created_at and resolved_at (ISO-8601 TEXT), plus a `(status, created_at)` index for the queue listing. Column set mirrors `CorrectionItem` exactly — no resolver column: operator attribution rides the durable audit trail (data minimization; the DTO carries no resolver field).
 - New `D1CorrectionRepository` implementing `ICorrectionRepository` beside the other D1 repositories: `create` (repository-assigned id, ISO timestamps), `findAll` (newest first), `resolve` (sets status/resolution/resolved_at; returns null on unknown id). Pinned by tests: CRUD, resolve semantics, unknown-id null.
 
 ### Console wiring

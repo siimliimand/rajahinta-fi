@@ -42,4 +42,4 @@ The zod schemas stay byte-identical (`targetType`/`targetId`/`reason`/`operator`
 ## Risks
 
 - The D1 test suites are FTS5-blocked on the operator host; repository tests must pass in CI (established arbitration, 2026-10-15 note).
-- Migration numbering: 0039 is free (highest applied is 0038; the 0029 duplication is historical and deliberately untouched).
+- Migration numbering: 0040 (0039 was taken by calendar_event_candidates after planning; the 0029 duplication is historical and deliberately untouched).
