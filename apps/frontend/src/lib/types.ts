@@ -125,6 +125,14 @@ export interface ProductDetail {
   readonly regulatoryClassification: string;
   readonly depositSystemStatus: boolean;
   readonly ean: string | null;
+  /**
+   * Additive SEO field (seo-aeo-agent-surfaces 1.1): the row's
+   * `product_master.updated_at` as an ISO string — the source for the
+   * Product JSON-LD `dateModified`. Absent when a payload predates the
+   * field (or a fixture omits it); the structured-data builder then
+   * omits `dateModified` — never a fabricated timestamp.
+   */
+  readonly updatedAt?: string;
 }
 
 export interface RetailOffer {

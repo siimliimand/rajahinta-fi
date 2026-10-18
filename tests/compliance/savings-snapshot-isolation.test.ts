@@ -193,6 +193,7 @@ describe('import-analysis: ranking/calculation input producers never import savi
       file.includes(`${path.sep}data-platform${path.sep}`) || // the data layer itself
       file.endsWith(path.join(WORKER_ROUTES_DIR, 'savings.routes.ts')) ||
       file.endsWith(path.join(WORKER_ROUTES_DIR, 'search.routes.ts')) || // catalog display reader (savings-first-catalog-and-prefill D1: display-only embed + BIGGEST_SAVING ordering)
+      file.endsWith(path.join('apps', 'api-worker', 'src', 'mcp', 'tools.ts')) || // read-only MCP display reader (seo-aeo-agent-surfaces 3.1): route-parity savings embeds; the calculator tool is the G3 route composition, parity-pinned by the MCP integration suite
       file.endsWith(
         path.join('apps', 'api-worker', 'src', 'cron', 'savings-snapshots.ts'),
       ); // the only writer

@@ -941,6 +941,14 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
         regulatoryClassification: product.regulatoryClassification,
         depositSystemStatus: product.depositSystemStatus ?? false,
         ean: product.ean,
+        // Additive SEO field (seo-aeo-agent-surfaces 1.1): the row's
+        // product_master.updated_at DATE (day precision) — the product
+        // page's Product JSON-LD dateModified source. Day precision is
+        // load-bearing, not cosmetic: the compliance byte-identity suites
+        // reseed a fresh composition per state, and millisecond
+        // timestamps would differ between them (the warnings / badges /
+        // benchmarks additivity pins).
+        updatedAt: product.updatedAt.toISOString().slice(0, 10),
       },
       offers: offers.map((o) => ({
         id: o.id,

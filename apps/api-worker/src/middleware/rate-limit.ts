@@ -71,6 +71,16 @@ export const RATE_LIMIT_PROFILES = {
    * other surfaces' budgets.
    */
   CONTACT: { limit: 5, windowMs: 600_000 },
+  /**
+   * MCP tool surface (change seo-aeo-agent-surfaces, spec
+   * agent-tool-surface): the /mcp endpoint's own boundary budget.
+   * SEARCH parity (30/min per client) — a tool call reads the same
+   * catalog/calculation data a search request does, so it gets the same
+   * ceiling; an agent batch loop is the same abuse shape as a scraper.
+   * Its own DO window — profile keys are isolated per client, so agent
+   * traffic shares no budget with the interactive search surface.
+   */
+  MCP: { limit: 30, windowMs: 60_000 },
 } as const;
 
 export type RateLimitProfileName = keyof typeof RATE_LIMIT_PROFILES;

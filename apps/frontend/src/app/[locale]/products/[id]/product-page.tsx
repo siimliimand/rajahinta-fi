@@ -74,6 +74,21 @@
  * unchanged — this file renders exactly what the pre-extraction page
  * rendered, byte for byte.
  *
+ * Structured data (seo-aeo-agent-surfaces 1.1): the page body renders
+ * the safe no-Offer `Product` JSON-LD and the localized `BreadcrumbList`
+ * plus a visible breadcrumb trail, built by the pure lib/seo builders
+ * from the same resolved detail payload. Both route adapters inherit the
+ * scripts through this shared module; the ISR segment config and cache
+ * windows are untouched.
+ *
+ * Deterministic Q&A (seo-aeo-agent-surfaces 2.1): a third streamed
+ * section, ProductFaqPanel, composes two to three factual answers from
+ * the payloads this module already fetches — template-composed, never
+ * generated. It receives the same still-pending context promise as the
+ * context line and awaits it inside its own Suspense boundary; a null
+ * payload drops the price question, an attribute-less product drops its
+ * question, and a block with zero pairs renders nothing.
+ *
  * @module ProductPage
  */
 
@@ -90,6 +105,11 @@ import {
   getServerProductDupes,
 } from '@/lib/server-api';
 import { localizedAlternates } from '@/lib/i18n/localized-paths';
+import {
+  buildProductJsonLd,
+  buildProductBreadcrumbJsonLd,
+  productBreadcrumbPaths,
+} from '@/lib/seo/product-structured-data';
 import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import { formatMoney } from '@/lib/format/money';
 import type { ProductDetailResponse } from '@/lib/types';
@@ -100,6 +120,7 @@ import { SellingDistanceBadge } from '../../compare/components/SellingDistanceBa
 import ProductAlertAction from './components/ProductAlertAction';
 import ProductFavoriteAction from './components/ProductFavoriteAction';
 import ProductDupesPanel from './components/ProductDupesPanel';
+import ProductFaqPanel from './components/ProductFaqPanel';
 import ProductPriceContextLine from './components/ProductPriceContextLine';
 import PriceHistoryChart from './components/PriceHistoryChart';
 
@@ -287,11 +308,18 @@ export async function generateMetadata({
     ? t(`category.${detail.product.category}`)
     : null;
 
+  // Enriched metadata (seo-aeo-agent-surfaces 1.4): the identifying
+  // tokens (brand, localized category label, volume, ABV) flow through
+  // the shared detailParts composition into BOTH the title and the
+  // description — one composition, two templates, no drift. The degraded
+  // branch above keeps its pinned fallback copy untouched.
+  const details = detailParts(detail, categoryLabel);
+
   return {
-    title: t('metaTitle', { name: detail.product.name }),
+    title: t('metaTitle', { name: detail.product.name, details }),
     description: t('metaDescription', {
       name: detail.product.name,
-      details: detailParts(detail, categoryLabel),
+      details,
     }),
     alternates,
   };
@@ -358,8 +386,71 @@ export default async function ProductPage({
     ...(product.ean ? [{ label: t('eanLabel'), value: product.ean }] : []),
   ];
 
+  // ── Structured data (seo-aeo-agent-surfaces 1.1) — the safe no-Offer
+  // Product graph (design D1: collected observations are not merchant
+  // offers) and the localized BreadcrumbList pair, composed by the pure
+  // lib/seo builders from this same resolved payload. Absent data omits
+  // its property (no EAN → no gtin13, unknown container key → no
+  // container entry, no updated_at → no dateModified) — the schema never
+  // exceeds what the page renders. Both route adapters (the physical
+  // /tuotteet/<id> and the [locale] one) inherit the scripts through
+  // this shared module (design D2); they ride the cached ISR shell, so
+  // the revalidate contract is untouched.
+  const productJsonLd = buildProductJsonLd({
+    product,
+    id,
+    locale,
+    labels: {
+      volumeLabel: t('volumeLabel'),
+      abvLabel: tCommon('abvLabel'),
+      containerLabel: t('containerLabel'),
+      containerTypeLabel: container,
+    },
+  });
+  const breadcrumbJsonLd = buildProductBreadcrumbJsonLd({
+    id,
+    locale,
+    productName: product.name,
+    homeLabel: t('breadcrumbHomeLabel'),
+    catalogLabel: t('breadcrumbCatalogLabel'),
+  });
+  // The visible trail renders the same three localized destinations the
+  // schema carries — one URL vocabulary (productBreadcrumbPaths).
+  const breadcrumbPaths = productBreadcrumbPaths(id, locale);
+
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+      {/* ── Breadcrumb trail (seo-aeo-agent-surfaces 1.1) — the visible
+          pair of the BreadcrumbList schema below: same destinations,
+          localized labels, the house metadata-line styling. ── */}
+      <p className="mb-4 text-xs text-gray-400">
+        <a
+          className="hover:text-gray-600 hover:underline"
+          href={breadcrumbPaths.home}
+        >
+          {t('breadcrumbHomeLabel')}
+        </a>
+        {' › '}
+        <a
+          className="hover:text-gray-600 hover:underline"
+          href={breadcrumbPaths.catalog}
+        >
+          {t('breadcrumbCatalogLabel')}
+        </a>
+        {' › '}
+        <span aria-current="page">{product.name}</span>
+      </p>
+
+      {/* ── The graphs themselves (LocaleChrome script-tag pattern) ── */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
+
       <h1 className="mb-1 text-2xl font-bold text-primary-700">
         {product.name}
       </h1>
@@ -524,6 +615,27 @@ export default async function ProductPage({
           nothing — absent from the HTML, never an empty shell. ── */}
       <React.Suspense fallback={null}>
         <ProductPriceContextLine payload={contextPromise} locale={locale} />
+      </React.Suspense>
+
+      {/* ── Deterministic Q&A block (seo-aeo-agent-surfaces 2.1, design
+          D4) — template-composed factual answers, no LLM: the price pair
+          reads the price-context payload's current-best selection (the
+          same figure and term the context line above renders, so the two
+          cannot contradict), the attribute pairs read the master data
+          through the shared formatters. The still-pending context promise
+          is awaited inside this boundary (the 4.1 hand-down pattern), so
+          the block streams after the shell; a null payload drops the
+          price pair and a zero-pair block renders nothing — absent, never
+          an empty shell. The pairs compose in the panel's exported pure
+          composeProductFaqPairs, which the FAQPage JSON-LD (task 2.2)
+          must call with the same inputs so the schema mirrors the visible
+          block one-to-one. ── */}
+      <React.Suspense fallback={null}>
+        <ProductFaqPanel
+          product={product}
+          payload={contextPromise}
+          locale={locale}
+        />
       </React.Suspense>
 
       {/* ── Price history (task 5.1) — server-fetched series, client

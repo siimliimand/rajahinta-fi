@@ -12,6 +12,9 @@
  *      empty shell.
  *   3. Fetch failure → the unavailable state, no crash (a fetch failure
  *      is not evidence of zero guides).
+ *   4. The detail page embeds an Article JSON-LD graph from the fetched
+ *      guide's stored fields, in both locales (seo-aeo-agent-surfaces
+ *      task 1.2); the index page embeds none.
  *
  * @module GuidesPagesTest
  */
@@ -24,6 +27,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import GuidesIndexPage, {
   generateMetadata as guidesIndexMetadata,
 } from './page';
+import GuidePostPage from './[slug]/page';
 import { request } from '@/lib/api';
 
 async function renderPageHtml(element: React.ReactElement): Promise<string> {
@@ -105,6 +109,34 @@ const GUIDE_OK = {
   publishedAt: '2026-09-01T09:00:00.000Z',
 };
 
+/** Full-post fixtures — the shape the slug page's guard accepts. */
+const GUIDE_POST_FI = {
+  ...GUIDE_OK,
+  bodyMarkdown: [
+    'Rajat ylittävät tuomat muistavat kiintiöt.',
+    '',
+    '- olut: 2 l',
+  ].join('\n'),
+};
+
+const GUIDE_POST_EN = {
+  slug: 'duty-free-allowances',
+  locale: 'en',
+  title: 'Duty-free allowances',
+  rateDatasetVersion: null,
+  publishedAt: '2026-09-01T09:00:00.000Z',
+  bodyMarkdown: 'Cross-border travellers know the quotas.',
+};
+
+/** The one ld+json script the detail page renders, parsed. */
+function extractArticleJsonLd(html: string): Record<string, unknown> {
+  const match = html.match(
+    /<script type="application\/ld\+json">(.*?)<\/script>/,
+  );
+  expect(match).not.toBeNull();
+  return JSON.parse(match![1]) as Record<string, unknown>;
+}
+
 describe('GuidesIndexPage', () => {
   it('renders published guides with per-guide links', async () => {
     mockedRequest.mockResolvedValue({
@@ -155,5 +187,68 @@ describe('GuidesIndexPage', () => {
     const html = await renderPageHtml(element);
 
     expect(html).toContain('Oppaita ei ole juuri nyt saatavilla');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Article JSON-LD (seo-aeo-agent-surfaces task 1.2)
+// ---------------------------------------------------------------------------
+
+describe('GuidePostPage JSON-LD', () => {
+  it('embeds an Article graph from the fetched guide, in Finnish', async () => {
+    mockedRequest.mockResolvedValue(GUIDE_POST_FI);
+
+    const element = await GuidePostPage({
+      params: Promise.resolve({ locale: 'fi', slug: 'tullivapaat-maarat' }),
+    });
+    const jsonLd = extractArticleJsonLd(await renderPageHtml(element));
+
+    expect(jsonLd['@context']).toBe('https://schema.org');
+    expect(jsonLd['@type']).toBe('Article');
+    // Stored fields, verbatim — headline and the publication date the
+    // row carries; no dateModified exists on the post contract.
+    expect(jsonLd.headline).toBe('Tullivapaat määrät');
+    expect(jsonLd.datePublished).toBe('2026-09-01T09:00:00.000Z');
+    expect(jsonLd).not.toHaveProperty('dateModified');
+    expect(jsonLd.inLanguage).toBe('fi');
+    // Author is the site Organization, and the graph's page reference
+    // is the canonical serving URL (the localized /oppaat segment).
+    expect(jsonLd.author).toEqual({
+      '@type': 'Organization',
+      name: 'Rajahinta.fi',
+      url: 'https://rajahinta.fi',
+    });
+    expect(jsonLd.mainEntityOfPage).toEqual({
+      '@type': 'WebPage',
+      '@id': 'https://rajahinta.fi/oppaat/tullivapaat-maarat',
+    });
+  });
+
+  it('embeds the same graph for the EN serving locale', async () => {
+    mockedRequest.mockResolvedValue(GUIDE_POST_EN);
+
+    const element = await GuidePostPage({
+      params: Promise.resolve({ locale: 'en', slug: 'duty-free-allowances' }),
+    });
+    const jsonLd = extractArticleJsonLd(await renderPageHtml(element));
+
+    expect(jsonLd['@type']).toBe('Article');
+    expect(jsonLd.headline).toBe('Duty-free allowances');
+    expect(jsonLd.inLanguage).toBe('en');
+    expect(jsonLd.mainEntityOfPage).toEqual({
+      '@type': 'WebPage',
+      '@id': 'https://rajahinta.fi/en/guides/duty-free-allowances',
+    });
+  });
+
+  it('embeds no JSON-LD on the index page', async () => {
+    mockedRequest.mockResolvedValue({ items: [GUIDE_OK], total: 1 });
+
+    const element = await GuidesIndexPage({
+      params: Promise.resolve({ locale: 'fi' }),
+    });
+    const html = await renderPageHtml(element);
+
+    expect(html).not.toContain('application/ld+json');
   });
 });

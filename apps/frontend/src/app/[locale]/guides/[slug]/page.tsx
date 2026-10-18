@@ -7,6 +7,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import { localizedAlternates } from '@/lib/i18n/localized-paths';
+import { buildGuideJsonLd } from '../../blog/article-jsonld';
 import { getServerGuidePost } from '../guides.server';
 import BlogPostBody from '../../blog/blog-post-body';
 import RelatedTools from '../related-tools';
@@ -30,7 +31,9 @@ interface GuidePostPageProps {
  * post content. Guides carry no rate-version provenance, so no
  * dataset-version line is rendered. The related-tools block links the
  * duty-free allowances reference and the trip calculator, where the
- * guide content is most often applied.
+ * guide content is most often applied. The detail render embeds an
+ * Article JSON-LD graph built from the stored post fields
+ * (seo-aeo-agent-surfaces task 1.2).
  */
 export async function generateMetadata({
   params,
@@ -120,9 +123,16 @@ export default async function GuidePostPage({ params }: GuidePostPageProps) {
 
   const { post } = outcome;
   const published = formatPublished(post.publishedAt, locale);
+  const jsonLd = buildGuideJsonLd(post, locale);
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+      {/* Structured data: Article, stored post fields only. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+
       <article>
         <h1 className="mb-2 text-2xl font-bold text-primary-700">
           {post.title}

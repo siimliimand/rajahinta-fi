@@ -21,6 +21,9 @@
  *      leakage for drafts).
  *   6. generateMetadata: post-specific title/description when ok,
  *      generic fallback when not.
+ *   7. The detail page embeds a BlogPosting JSON-LD graph from the
+ *      fetched post's stored fields, in both locales (seo-aeo-agent-
+ *      surfaces task 1.2); the index page embeds none.
  *
  * @module BlogPagesTest
  */
@@ -138,6 +141,25 @@ function apiError(status: number): ApiError {
     timestamp: '2026-09-08T10:00:00.000Z',
     path: '/api/v1/blog/posts',
   };
+}
+
+/** The EN fixture — the same contract, one English-language row. */
+const POST_EN = {
+  slug: 'tax-change-2026-2',
+  locale: 'en',
+  title: 'Tax dataset 2026-2',
+  rateDatasetVersion: '2026-2',
+  publishedAt: '2026-09-01T09:00:00.000Z',
+  bodyMarkdown: 'The rate dataset 2026-2 takes effect on 1 Oct 2026.',
+};
+
+/** The one ld+json script the detail page renders, parsed. */
+function extractArticleJsonLd(html: string): Record<string, unknown> {
+  const match = html.match(
+    /<script type="application\/ld\+json">(.*?)<\/script>/,
+  );
+  expect(match).not.toBeNull();
+  return JSON.parse(match![1]) as Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -273,6 +295,81 @@ describe('BlogPostPage', () => {
     });
     expect(fallback.title).toBe('Blogi');
     expect(fallback.alternates?.canonical).toBe('/blogi/ei-olemassa');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Article JSON-LD (seo-aeo-agent-surfaces task 1.2)
+// ---------------------------------------------------------------------------
+
+describe('BlogPostPage JSON-LD', () => {
+  it('embeds a BlogPosting graph from the fetched post, in Finnish', async () => {
+    mockedRequest.mockResolvedValue(POST_OK);
+
+    const element = await BlogPostPage({
+      params: Promise.resolve({ locale: 'fi', slug: 'veromuutos-2026-2' }),
+    });
+    const jsonLd = extractArticleJsonLd(await renderPageHtml(element));
+
+    expect(jsonLd['@context']).toBe('https://schema.org');
+    expect(jsonLd['@type']).toBe('BlogPosting');
+    // Stored fields, verbatim — headline and the publication date the
+    // row carries; no dateModified exists on the post contract.
+    expect(jsonLd.headline).toBe('Veromuutus 2026-2');
+    expect(jsonLd.datePublished).toBe('2026-09-01T09:00:00.000Z');
+    expect(jsonLd).not.toHaveProperty('dateModified');
+    expect(jsonLd.inLanguage).toBe('fi');
+    // Author is the site Organization, and the graph's page reference
+    // is the canonical serving URL (the localized /blogi segment).
+    expect(jsonLd.author).toEqual({
+      '@type': 'Organization',
+      name: 'Rajahinta.fi',
+      url: 'https://rajahinta.fi',
+    });
+    expect(jsonLd.mainEntityOfPage).toEqual({
+      '@type': 'WebPage',
+      '@id': 'https://rajahinta.fi/blogi/veromuutos-2026-2',
+    });
+  });
+
+  it('embeds the same graph for the EN serving locale', async () => {
+    mockedRequest.mockResolvedValue(POST_EN);
+
+    const element = await BlogPostPage({
+      params: Promise.resolve({ locale: 'en', slug: 'tax-change-2026-2' }),
+    });
+    const jsonLd = extractArticleJsonLd(await renderPageHtml(element));
+
+    expect(jsonLd['@type']).toBe('BlogPosting');
+    expect(jsonLd.headline).toBe('Tax dataset 2026-2');
+    expect(jsonLd.inLanguage).toBe('en');
+    expect(jsonLd.mainEntityOfPage).toEqual({
+      '@type': 'WebPage',
+      '@id': 'https://rajahinta.fi/en/blog/tax-change-2026-2',
+    });
+  });
+
+  it('omits datePublished when the stored post carries no date', async () => {
+    mockedRequest.mockResolvedValue({ ...POST_OK, publishedAt: null });
+
+    const element = await BlogPostPage({
+      params: Promise.resolve({ locale: 'fi', slug: 'veromuutos-2026-2' }),
+    });
+    const jsonLd = extractArticleJsonLd(await renderPageHtml(element));
+
+    expect(jsonLd).not.toHaveProperty('datePublished');
+    expect(jsonLd.headline).toBe('Veromuutus 2026-2');
+  });
+
+  it('embeds no JSON-LD on the index page', async () => {
+    mockedRequest.mockResolvedValue({ items: [POST_OK], total: 1 });
+
+    const element = await BlogIndexPage({
+      params: Promise.resolve({ locale: 'fi' }),
+    });
+    const html = await renderPageHtml(element);
+
+    expect(html).not.toContain('application/ld+json');
   });
 });
 

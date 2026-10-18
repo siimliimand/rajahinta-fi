@@ -109,18 +109,26 @@ vi.mock('../../../components/MerchantWarningNotice', () => ({
 }));
 vi.mock('../components/ProductAlertAction', () => ({ default: () => null }));
 vi.mock('../components/ProductFavoriteAction', () => ({ default: () => null }));
-// The two streaming sections (product-page-cold-latency 4.1) are stubbed —
-// their contracts have their own test files. The stubs still record the
-// props the page hands down, so the streaming contract (still-pending
+// The three streaming sections (product-page-cold-latency 4.1; the Q&A
+// block joins them in seo-aeo-agent-surfaces 2.1) are stubbed — their
+// contracts have their own test files. The stubs still record the props
+// the page hands down, so the streaming contract (still-pending
 // promises, awaited inside the page's Suspense boundaries) is observable
 // here.
 const sectionProps = vi.hoisted(() => ({
   context: undefined as unknown,
   dupes: undefined as unknown,
+  faq: undefined as unknown,
 }));
 vi.mock('../components/ProductDupesPanel', () => ({
   default: (props: { dupes: unknown }) => {
     sectionProps.dupes = props.dupes;
+    return null;
+  },
+}));
+vi.mock('../components/ProductFaqPanel', () => ({
+  default: (props: { payload: unknown }) => {
+    sectionProps.faq = props.payload;
     return null;
   },
 }));
@@ -297,6 +305,11 @@ describe('ProductPage streaming sections (product-page-cold-latency 4.1)', () =>
 
     expect(sectionProps.context).toBeInstanceOf(Promise);
     expect(sectionProps.dupes).toBeInstanceOf(Promise);
+    // The Q&A block (seo-aeo-agent-surfaces 2.1) rides the same hand-down:
+    // it awaits the page's context promise inside its own Suspense
+    // boundary, so the block streams after the shell — its null
+    // degradation and rendered pairs are pinned in ProductFaqPanel.test.tsx.
+    expect(sectionProps.faq).toBeInstanceOf(Promise);
   });
 });
 

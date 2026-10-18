@@ -490,6 +490,11 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/api/v1/unitprice/ranking', ['GET'], '— + ageGate'],
   // What-if — route-local CALCULATOR.
   ['/api/v1/what-if/excise', ['POST'], 'CALCULATOR'],
+  // MCP tool surface (seo-aeo-agent-surfaces) — route-local MCP rate
+  // limit (30/min/IP, SEARCH parity) + ageGate, registered in the
+  // module (search-routes precedent). Closed read-only tool set; the
+  // stateless JSON surface is POST-only.
+  ['/mcp', ['POST'], 'MCP + ageGate'],
   // Ops console — every route rides the /ops/console/* opsAccess prefix;
   // no rate limit (operator traffic, bearer-token gated).
   ['/ops/console/audit', ['GET'], 'opsAccess'],

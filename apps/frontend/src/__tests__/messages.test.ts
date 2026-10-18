@@ -14,6 +14,7 @@ import fi from '../messages/fi.json';
 import en from '../messages/en.json';
 import { SORT_ORDER_DESCRIPTIONS } from '../lib/ranking-descriptions';
 import type { SortOrder } from '../lib/types';
+import { checkContent } from '../lib/content-policy';
 
 /** Recursively collect dotted key paths to string leaves. */
 function stringKeys(value: unknown, prefix = ''): Map<string, string> {
@@ -543,5 +544,59 @@ describe('ProductPage enum label key parity', () => {
 
   it('ProductPage.containerType covers exactly the container-type CHECK values in both locales', () => {
     expectEnumKeySet('containerType', expectedContainerTypeKeys);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Product-page deterministic Q&A keys (seo-aeo-agent-surfaces 2.1): the
+// FAQ block composes its visible pairs from exactly these keys, and the
+// FAQPage JSON-LD (task 2.2) mirrors the rendered pairs — so the key set
+// is load-bearing and must exist, translated, in BOTH locales. The copy
+// must also pass the content-policy vocabulary lint: no promotional
+// adjectives, no advice phrasing (spec: "Answers stay within the
+// content policy").
+// ---------------------------------------------------------------------------
+
+describe('ProductPage FAQ key parity and content policy (seo-aeo-agent-surfaces 2.1)', () => {
+  const faqKeys = [
+    'faqHeading',
+    'faqPriceQuestion',
+    'faqPriceAnswer',
+    'faqAbvQuestion',
+    'faqAbvAnswer',
+    'faqVolumeQuestion',
+    'faqVolumeAnswer',
+  ] as const;
+
+  const productPageOf = (locale: 'fi' | 'en'): Record<string, string> =>
+    ((locale === 'fi' ? fi : en) as unknown as Record<
+      string,
+      Record<string, string>
+    >).ProductPage ?? {};
+
+  it('carries the exact FAQ key set in both locales, genuinely translated', () => {
+    for (const locale of ['fi', 'en'] as const) {
+      const table = productPageOf(locale);
+      for (const key of faqKeys) {
+        const text = table[key];
+        expect(typeof text).toBe('string');
+        expect(text.trim().length).toBeGreaterThan(0);
+      }
+    }
+    for (const key of faqKeys) {
+      // A copied string means one locale would render the other's
+      // language on a crawler-facing surface.
+      expect(productPageOf('en')[key]).not.toBe(productPageOf('fi')[key]);
+    }
+  });
+
+  it('every FAQ string passes the content-policy vocabulary lint in both locales', () => {
+    for (const locale of ['fi', 'en'] as const) {
+      const table = productPageOf(locale);
+      for (const key of faqKeys) {
+        const violations = checkContent(table[key]);
+        expect(violations).toEqual([]);
+      }
+    }
   });
 });
