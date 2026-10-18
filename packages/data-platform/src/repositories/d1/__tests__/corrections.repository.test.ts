@@ -8,12 +8,20 @@
  *
  * @module D1CorrectionRepositoryTest
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { openMigratedD1 } from './d1-test-harness';
 import { D1CorrectionRepository } from '../corrections.repository';
 
-const { d1 } = openMigratedD1();
-const repo = new D1CorrectionRepository(d1);
+/**
+ * A fresh store per test: the exact-list assertions (findAll newest-first)
+ * assume an empty table, so a shared database would leak rows between tests.
+ */
+let repo: D1CorrectionRepository;
+
+beforeEach(() => {
+  const { d1 } = openMigratedD1();
+  repo = new D1CorrectionRepository(d1);
+});
 
 /**
  * Timestamps carry millisecond precision; back-to-back creates can land
