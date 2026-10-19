@@ -418,6 +418,24 @@ describe('POST /api/v1/products/scan-label — model failure (typed 502)', () =>
     expect(findCandidatesMock).not.toHaveBeenCalled();
   });
 
+  it('answers a retryable 502 when the env carries no AI binding', async () => {
+    // Local dev and the browser-E2E harness boot without the binding by
+    // config (wrangler.jsonc top-level note) — the contract is the same
+    // retryable 502 as a model failure, and no funnel work happens.
+    const res = await multipartRequest(
+      scanEnv({ AI: undefined as unknown as Env['AI'] }),
+      jpegForm(),
+    );
+
+    await expectEnvelope(res, 502, {
+      error: 'BadGateway',
+      code: 'MODEL_UNAVAILABLE',
+      retryable: true,
+    });
+    expect(runMock).not.toHaveBeenCalled();
+    expect(findCandidatesMock).not.toHaveBeenCalled();
+  });
+
   it('answers a retryable 502 when the output is unparseable prose', async () => {
     runMock.mockResolvedValue({
       response:

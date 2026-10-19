@@ -448,6 +448,12 @@ async function scanLabel(c: Context<AppEnv>): Promise<Response> {
 
   // The model call (design D1/D2). The image exists here only as this
   // data URL string in local scope — nothing persists, nothing logs.
+  // Local dev and the browser-E2E harness boot WITHOUT an AI binding by
+  // config (wrangler.jsonc top-level note): degrade to the same typed
+  // retryable 502 as a model failure instead of a raw TypeError.
+  if (!c.env.AI) {
+    throw modelUnavailableError();
+  }
   const dataUrl = `data:image/${format};base64,${toBase64(bytes)}`;
   let modelText: string;
   try {

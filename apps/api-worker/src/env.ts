@@ -60,15 +60,18 @@ export interface Env {
   /**
    * Workers AI binding (change label-scan-product-lookup, task 2.1;
    * design D1) — runs the label-photo transcription/extraction model for
-   * POST /api/v1/products/scan-label. Required, like DB: declared in
-   * every wrangler environment and needed for the route to function at
-   * all — a missing binding must surface at typecheck, not as a runtime
-   * 500. The pinned model constant lives in the scan-label route module
-   * (task 2.2), never here. Label image bytes are processed in memory
-   * and NEVER logged or persisted (design D7: the route's code path
-   * touches no storage binding).
+   * POST /api/v1/products/scan-label. Declared per environment in
+   * wrangler.jsonc (staging/production) but deliberately ABSENT from the
+   * top-level config: a top-level `ai` binding forces every plain
+   * `wrangler dev` boot (local dev, browser-E2E harness) into a remote
+   * proxy session that unattended environments cannot authenticate. The
+   * route degrades an absent binding to its typed retryable 502 — the
+   * same contract as a model failure. The pinned model constant lives in
+   * the scan-label route module (task 2.2), never here. Label image
+   * bytes are processed in memory and NEVER logged or persisted (design
+   * D7: the route's code path touches no storage binding).
    */
-  readonly AI: Ai;
+  readonly AI?: Ai;
   /**
    * Object key of the rate snapshot inside RATE_SNAPSHOTS (per-env
    * config, design D9; wrangler vars per environment). Default when
