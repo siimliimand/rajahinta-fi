@@ -24,4 +24,4 @@
 ## 5. Verification
 
 - [x] 5.1 Run typecheck, eslint, unit suites, and the D1 suite; fix fallout <!-- agent: platform-engineer.fast, depends_on: [2.2, 3.3, 4.1], touches: [] -->
-- [ ] 5.2 Staging deploy + smoke: POST a fixture label image to `/api/v1/products/scan-label` on staging — assert candidate envelope shape, extracted fields, latency under 8 s, quota 429 after burst, age-gate 403 without the confirmation header, and zero storage writes (R2/KV bindings untouched); `/scan` renders on mobile viewport with camera prompt <!-- agent: devops-engineer.fast, depends_on: [5.1], touches: [] -->
+- [x] 5.2 Staging deploy + smoke: POST a fixture label image to `/api/v1/products/scan-label` on staging — assert candidate envelope shape, extracted fields, latency under 8 s, quota 429 after burst, age-gate 403 without the confirmation header, and zero storage writes (R2/KV bindings untouched); `/scan` renders on mobile viewport with camera prompt <!-- agent: devops-engineer.fast, depends_on: [5.1], touches: [] -->
