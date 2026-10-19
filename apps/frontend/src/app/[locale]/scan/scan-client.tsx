@@ -45,6 +45,21 @@ const SCAN_IMAGE_MAX_EDGE = 1024;
 const SCAN_JPEG_QUALITY = 0.8;
 
 /**
+ * Below this the capture is not a photo: a real 1024 px label frame at
+ * q0.8 encodes to tens of KB, while an unpainted/black canvas compresses
+ * to a few KB (prod 2026-10-19: two identical 2742-byte uploads — the
+ * model received a black frame). The gate answers the honest local
+ * recovery state instead of spending a model round-trip on garbage.
+ */
+const SCAN_MIN_BLOB_BYTES = 15_000;
+
+/**
+ * How long the capture waits for the video to actually have frame data
+ * (and, where supported, one painted-frame callback) before drawing.
+ */
+const SCAN_FRAME_WAIT_MS = 2_000;
+
+/**
  * The catalog search seeds at most this many characters — the products
  * page caps its ?q= at 100 before the API sees it.
  */
@@ -96,6 +111,9 @@ interface ScanLabelResult {
  * `candidates`, `no-result`, and `denied`; the capture flow needs the
  * `idle`/`preview` rest states in front of them, and the endpoint's
  * typed failures render as `age-gate`, `rate-limited`, and `error`.
+ * `capture-failed` is the client-side sanity state: the grab produced
+ * no readable frame (unpainted/black capture) — recovery without ever
+ * reaching the endpoint.
  */
 type ScanStatus =
   | 'idle'
@@ -106,6 +124,7 @@ type ScanStatus =
   | 'denied'
   | 'age-gate'
   | 'rate-limited'
+  | 'capture-failed'
   | 'error';
 
 // ---------------------------------------------------------------------------
@@ -140,6 +159,39 @@ async function frameToJpegBlob(video: HTMLVideoElement): Promise<Blob> {
   const height = video.videoHeight;
   if (width === 0 || height === 0) {
     throw new Error('No video frame available');
+  }
+  // A painted frame, not just loaded metadata: readyState ≥ 1 sets
+  // videoWidth BEFORE the first frame is rendered, and drawImage then
+  // captures a black canvas (the prod black-capture incident). Wait for
+  // frame data, and where the browser supports it, one painted-frame
+  // callback — bounded, so a stalled stream still degrades to the gate.
+  if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+    await new Promise<void>((resolve) => {
+      // Re-check inside the promise: the frame may land between the
+      // outer check and the listener attachment.
+      if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        resolve();
+        return;
+      }
+      const timeout = setTimeout(resolve, SCAN_FRAME_WAIT_MS);
+      video.addEventListener(
+        'loadeddata',
+        () => {
+          clearTimeout(timeout);
+          resolve();
+        },
+        { once: true },
+      );
+    });
+  }
+  if (typeof video.requestVideoFrameCallback === 'function') {
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(resolve, SCAN_FRAME_WAIT_MS);
+      video.requestVideoFrameCallback(() => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
   }
   const scale = Math.min(1, SCAN_IMAGE_MAX_EDGE / Math.max(width, height));
   const canvas = document.createElement('canvas');
@@ -250,7 +302,13 @@ export default function ScanClient() {
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
+        video: {
+          facingMode: 'environment',
+          // Sane capture resolution — devices free to default low (a
+          // 320 px stream reads no label); 'ideal' never fails the ask.
+          width: { ideal: 1280 },
+          height: { ideal: 1280 },
+        },
         audio: false,
       });
       streamRef.current = stream;
@@ -278,18 +336,27 @@ export default function ScanClient() {
     const video = videoRef.current;
     if (video === null || status !== 'preview') return;
 
-    // The camera is done the moment the frame is grabbed — tracks stop
-    // here AND on unmount, never only on one of the two.
-    stopCamera();
-    setStatus('extracting');
-
+    // Grab FIRST, tear down after: stopping the tracks before drawImage
+    // can blank the element on some browsers.
     let blob: Blob;
     try {
       blob = await frameToJpegBlob(video);
     } catch {
-      setStatus('error');
+      stopCamera();
+      setStatus('capture-failed');
       return;
     }
+    stopCamera();
+
+    // The black-capture gate (see SCAN_MIN_BLOB_BYTES): never spend a
+    // model round-trip on an unreadable frame — the photo is already
+    // gone from memory, retry is a fresh capture.
+    if (blob.size < SCAN_MIN_BLOB_BYTES) {
+      setStatus('capture-failed');
+      return;
+    }
+
+    setStatus('extracting');
 
     const form = new FormData();
     form.append('image', new File([blob], 'label.jpg', { type: 'image/jpeg' }));
@@ -602,6 +669,19 @@ export default function ScanClient() {
             </span>
           ) : null}
         </ErrorState>
+      ) : null}
+
+      {/* ── Capture failed: the grab produced no readable frame
+          (unpainted/black capture, encoding failure) — a local failure,
+          the endpoint was never called. Retry means a fresh capture. ── */}
+      {status === 'capture-failed' ? (
+        <ErrorState
+          data-testid="scan-capture-failed"
+          title={t('captureFailedTitle')}
+          description={t('captureFailedBody')}
+          onRetry={restart}
+          retryLabel={t('retryScanLabel')}
+        />
       ) : null}
 
       {/* ── Error: the retryable 502 envelope, a transport failure, or
