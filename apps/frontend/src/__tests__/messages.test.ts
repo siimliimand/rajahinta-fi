@@ -169,6 +169,9 @@ describe('layout and navigation catalog completeness', () => {
       // funnel-evidence-and-value-surfaces 1.4: the anonymous, session-scoped
       // product-analytics disclosure line under the disclaimer.
       'privacyAnalytics',
+      // label-scan-product-lookup 4.1: the in-memory-only label-photo
+      // disclosure next to the analytics line.
+      'privacyScan',
       'methodology',
       'tagline',
       'servicesHeading',
