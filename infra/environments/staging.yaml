@@ -77,12 +77,17 @@ durable_objects:                           # SQLite-backed (design D5)
 workflows:
   - rajahinta-price-ingestion              # fetch→gate→map→upsert→quality
 
-crons:                                     # UTC (see api-worker wrangler.jsonc)
-  - "0 * * * *"
-  - "*/30 * * * *"
-  - "0 */6 * * *"
-  - "0 2 * * *"
-  - "30 3 * * *"
+# crons (UTC, see api-worker wrangler.jsonc) — ALL STOPPED 2026-10-14
+# (ops request): the staging triggers array is empty, no scheduled handler
+# fires. Ingestion was already manual-only (2026-10-07). Pre-stop set, for
+# re-enabling in wrangler.jsonc env.staging.triggers:
+#   "*/30 * * * *"  aggregation + freshness alert
+#   "0 */6 * * *"   transport refresh + click flush
+#   "0 2 * * *"     tax review
+#   "30 3 * * *"    retention sweep
+#   "0 5 1 * *"     fransberg refresh (monthly)
+#   "0 6 * * 1"     preference digest (also var-gated)
+crons: []
 
 # ── Secrets and variables (NAMES ONLY — values live in GitHub/wrangler) ───
 github_secrets:                            # repo settings → Actions secrets
