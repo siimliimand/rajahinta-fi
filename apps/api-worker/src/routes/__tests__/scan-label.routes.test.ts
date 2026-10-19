@@ -474,6 +474,59 @@ describe('POST /api/v1/products/scan-label — model failure (typed 502)', () =>
     const body = await expectEnvelope(res, 502, {});
     expect(JSON.stringify(body)).not.toContain(secretProse);
   });
+
+  it('answers a retryable 502 — never a 500 — when the response is a non-string envelope', async () => {
+    // Production ray a4d1950f6f59e4de: the binding answered a real photo
+    // with a non-string response and `text.replace` crashed into an
+    // unhandled 500. Model output problems are always the typed 502.
+    runMock.mockResolvedValue({ response: { role: 'assistant', parts: 42 } });
+
+    const res = await multipartRequest(scanEnv(), jpegForm());
+
+    await expectEnvelope(res, 502, {
+      error: 'BadGateway',
+      code: 'UNPARSEABLE_MODEL_OUTPUT',
+      retryable: true,
+    });
+    expect(findCandidatesMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Model response shapes — the binding types promise `response: string`,
+// production has shipped other envelopes (modelResponseText)
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v1/products/scan-label — model response shape normalization', () => {
+  it('reads a content-block array response and parses the JSON it carries', async () => {
+    const json =
+      '{"visible_text": "KARHU III", "brand": "Karhu", "product": "III", "abv_percent": 4.7, "volume_l": 0.33, "category": "beer", "vintage_year": null}';
+    runMock.mockResolvedValue({
+      response: [
+        { type: 'text', text: `Transcribed: KARHU III\n${json}` },
+      ],
+    });
+    findCandidatesMock.mockResolvedValue([]);
+
+    const res = await multipartRequest(scanEnv(), jpegForm());
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { extracted: { brand: string | null } };
+    expect(body.extracted.brand).toBe('Karhu');
+  });
+
+  it('reads a nested object envelope ({response: {content}})', async () => {
+    const json =
+      '{"visible_text": "KARHU III", "brand": "Karhu", "product": "III", "abv_percent": null, "volume_l": null, "category": "beer", "vintage_year": null}';
+    runMock.mockResolvedValue({ response: { content: json } });
+    findCandidatesMock.mockResolvedValue([]);
+
+    const res = await multipartRequest(scanEnv(), jpegForm());
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { extracted: { brand: string | null } };
+    expect(body.extracted.brand).toBe('Karhu');
+  });
 });
 
 // ---------------------------------------------------------------------------

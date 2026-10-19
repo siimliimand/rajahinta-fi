@@ -297,6 +297,48 @@ export function extractJsonBlob(text: string): unknown {
 }
 
 /**
+ * Normalize one Workers AI run result into its text, or null when no
+ * shape this route can read is present. The generated binding types
+ * promise `response: string`, but production has answered a real label
+ * photo with a NON-STRING response — `text.replace` then crashed into
+ * an unhandled 500 (ray a4d1950f6f59e4de, 2026-10-19). Every plausible
+ * envelope is read defensively here: a bare string, `{ response: string
+ * }`, a content-block array (`response`/`text`/`content` holding
+ * `{ text }` parts), or an object wrapping `text`/`content`. Anything
+ * else is null and the caller answers the typed retryable 502 — model
+ * output problems are never a 500 (design D2/D7).
+ */
+export function modelResponseText(output: unknown): string | null {
+  if (typeof output === 'string') return output;
+  if (output === null || typeof output !== 'object') return null;
+  const envelope = output as {
+    response?: unknown;
+    text?: unknown;
+    content?: unknown;
+  };
+  for (const candidate of [envelope.response, envelope.text, envelope.content]) {
+    if (typeof candidate === 'string') return candidate;
+    if (Array.isArray(candidate)) {
+      const parts = candidate
+        .map((part) =>
+          part !== null && typeof part === 'object' &&
+          typeof (part as { text?: unknown }).text === 'string'
+            ? (part as { text: string }).text
+            : null,
+        )
+        .filter((part): part is string => part !== null);
+      if (parts.length > 0) return parts.join('\n');
+    }
+    if (candidate !== null && typeof candidate === 'object') {
+      const nested = candidate as { text?: unknown; content?: unknown };
+      if (typeof nested.text === 'string') return nested.text;
+      if (typeof nested.content === 'string') return nested.content;
+    }
+  }
+  return null;
+}
+
+/**
  * Parse one model response string into the extraction, or null when the
  * output yields no JSON object at all (the typed-502 case).
  */
@@ -455,9 +497,13 @@ async function scanLabel(c: Context<AppEnv>): Promise<Response> {
     throw modelUnavailableError();
   }
   const dataUrl = `data:image/${format};base64,${toBase64(bytes)}`;
-  let modelText: string;
+  let modelText: string | null;
   try {
-    const output = await c.env.AI.run(SCAN_LABEL_MODEL, {
+    // Treat the binding's answer as unknown: the generated types promise
+    // a string response, but production has shipped a non-string for a
+    // real photo (see modelResponseText) — trusting the type here once
+    // turned into an unhandled 500.
+    const output: unknown = await c.env.AI.run(SCAN_LABEL_MODEL, {
       messages: [
         {
           role: 'user',
@@ -469,11 +515,16 @@ async function scanLabel(c: Context<AppEnv>): Promise<Response> {
       ],
       max_tokens: 500,
     });
-    modelText = output.response;
+    modelText = modelResponseText(output);
   } catch {
     // Model failure (entitlement drift, 5xx, timeout) — a typed retryable
     // 502, never a raw 500, never the failure text (design D7).
     throw modelUnavailableError();
+  }
+  if (modelText === null) {
+    // The binding answered, but in no shape this route reads — the same
+    // typed retryable 502 as unparseable prose (design D2).
+    throw unparseableOutputError();
   }
 
   const extracted = parseLabelExtraction(modelText);
