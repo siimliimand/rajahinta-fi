@@ -183,6 +183,7 @@ export const ROUTE_CLIENT_NAMESPACES = {
   '/ranking': ['AccuracyStat', 'Common', 'Nav', 'Ranking', 'SortOrders'],
   '/register': ['Auth', 'Register'],
   '/savings': ['Common', 'SavingsPage'],
+  '/scan': ['Scan'],
   '/share/:publicId': ['ConfidenceMeter', 'DisclaimerBanner'],
   '/tax-changes': ['TaxChangeCalendarPage'],
   '/trip': [

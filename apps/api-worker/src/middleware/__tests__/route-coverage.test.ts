@@ -462,6 +462,10 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   // Product id enumeration (sitemap-tree-coverage 1.1) — route-local
   // ageGate, no rate limit (products-listing parity; server-to-server).
   ['/api/v1/products/ids', ['GET'], '— + ageGate'],
+  // Label-scan recognition (label-scan-product-lookup 2.2) — route-local
+  // ageGate + the anonymous per-IP scan quota (RateLimiterDO with the
+  // route-local `scan-label` profile, 10/h/IP; design D5).
+  ['/api/v1/products/scan-label', ['POST'], 'scan-label quota (10/h/IP) + ageGate'],
   // Shop-report submission (task 2.2) — AUTH then sessionAuth.
   ['/api/v1/reports', ['POST'], 'AUTH + sessionAuth'],
   // Calculation-record export — DECLARATION at index.ts + ageGate +

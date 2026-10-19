@@ -169,6 +169,9 @@ describe('layout and navigation catalog completeness', () => {
       // funnel-evidence-and-value-surfaces 1.4: the anonymous, session-scoped
       // product-analytics disclosure line under the disclaimer.
       'privacyAnalytics',
+      // label-scan-product-lookup 4.1: the in-memory-only label-photo
+      // disclosure next to the analytics line.
+      'privacyScan',
       'methodology',
       'tagline',
       'servicesHeading',
@@ -424,6 +427,14 @@ describe('honest-state catalog key parity (3.1 + 3.2)', () => {
   it('did-you-mean banner copy exists in both locales (task 3.3)', () => {
     expectParity('ProductSearch', null, ['didYouMean']);
     expectParity('ProductsPage', null, ['didYouMean']);
+  });
+
+  // ── Scan entry affordance (label-scan-product-lookup task 3.3): the
+  // catalog search row's icon-button label pair — the spec's only
+  // in-catalog entry to /scan — must exist, translated, in both locales. ──
+
+  it('Scan.entry* carries the catalog search-row entry labels in parity', () => {
+    expectParity('Scan', null, ['entryLabel', 'entryAriaLabel']);
   });
 
   // ── Dated pre-dispatch walkthrough (import-filing-assistant task 2.4):

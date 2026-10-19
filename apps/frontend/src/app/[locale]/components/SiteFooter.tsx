@@ -142,6 +142,12 @@ export default async function SiteFooter() {
               <p className="mt-2 text-xs leading-relaxed text-gray-500">
                 {t('privacyAnalytics')}
               </p>
+              {/* Scan privacy disclosure (label-scan-product-lookup 4.1,
+                  "Scan surface protection") — the in-memory processing
+                  claim under the analytics line, same subdued voice. */}
+              <p className="mt-2 text-xs leading-relaxed text-gray-500">
+                {t('privacyScan')}
+              </p>
             </div>
             <div className="shrink-0 text-right">
               {languageNames && (

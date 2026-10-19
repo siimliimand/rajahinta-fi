@@ -781,6 +781,42 @@ describe('ProductsPage empty state and forgiveness', () => {
       screen.getByRole('link', { name: 'Yritä uudelleen' }),
     ).toHaveAttribute('href', '/tuotteet');
     expect(screen.queryByTestId('catalog-grid')).not.toBeInTheDocument();
+    // The degraded branch renders no search row at all — the scan entry
+    // (spec: entry point ONLY through the search area) appears nowhere.
+    expect(screen.queryByTestId('scan-entry')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scan entry (task 3.3, change label-scan-product-lookup): the spec pins
+// the scan entry point to the search area and /scan alone — the page
+// renders exactly one entry, placed beside the search input.
+// ---------------------------------------------------------------------------
+
+describe('ProductsPage scan entry (label-scan-product-lookup 3.3)', () => {
+  it('renders one scan-entry link beside the search input, localized to /skannaus', async () => {
+    await renderCatalog();
+
+    const form = screen.getByTestId('catalog-search');
+    const entry = within(form).getByTestId('scan-entry');
+    // DOM adjacency: the entry sits immediately after the search input
+    // (thumb-reachable when the row wraps on a phone — DESIGN.md).
+    const input = within(form).getByLabelText('Haku');
+    expect(entry.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    // The entry IS the link — catalog-keyed accessible name, localized
+    // segment resolved through the routing vocabulary by the i18n Link.
+    expect(entry).toHaveAttribute('aria-label', 'Avaa etiketin tunnistus');
+    expect(entry).toHaveAttribute('href', '/skannaus');
+    // Exactly one entry on the page — no app-wide navigation changes.
+    expect(screen.getAllByTestId('scan-entry')).toHaveLength(1);
+  });
+
+  it('resolves the entry labels from the EN catalog for the en locale', async () => {
+    await renderCatalog({}, 'en');
+
+    expect(
+      screen.getByRole('link', { name: 'Open label recognition' }),
+    ).toHaveAttribute('title', 'Recognize a label from a photo');
   });
 });
 

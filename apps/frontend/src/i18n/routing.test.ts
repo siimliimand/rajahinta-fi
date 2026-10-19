@@ -33,7 +33,8 @@ const internalRouteNames = entries.map(([key]) => key);
 
 describe('localized pathnames vocabulary (design D1)', () => {
   it('pins the localized entry count', () => {
-    expect(localized).toHaveLength(21);
+    // 22 since label-scan-product-lookup 3.1 (/scan → fi /skannaus).
+    expect(localized).toHaveLength(22);
   });
 
   it('every localized entry has exactly the keys fi and en', () => {

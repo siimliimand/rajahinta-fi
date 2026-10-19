@@ -490,6 +490,10 @@ const PUBLIC_STATIC_ROUTES = [
   '/products',
   '/ranking',
   '/savings',
+  // label-scan-product-lookup 3.1: the scan page is a public, uniquely
+  // titled tool route (fi /skannaus, en /en/scan) — advertised like the
+  // other tool pages.
+  '/scan',
   '/tax-changes',
   '/trip',
   '/value',

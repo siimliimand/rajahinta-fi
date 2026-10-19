@@ -36,6 +36,12 @@ import {
 } from './routes/calculator.routes';
 import { registerSearchRoutes } from './routes/search.routes';
 import { registerProductIdsRoutes } from './routes/product-ids.routes';
+// Scan-label (change label-scan-product-lookup, task 2.2): single-photo
+// label recognition over the Workers AI binding. Its guard chain (age
+// gate → anonymous per-IP scan quota) registers inside the route module
+// (calendar-route precedent); the route imports no storage binding — the
+// image is processed in memory and never persisted (design D7).
+import { registerScanLabelRoutes } from './routes/scan-label.routes';
 import { registerUnitPriceRoutes } from './routes/unitprice.routes';
 import { registerProductDupesRoutes } from './routes/product-dupes.routes';
 import { registerWhatIfRoutes } from './routes/what-if.routes';
@@ -169,6 +175,10 @@ export function createApp(): Hono<AppEnv> {
   // route, under any router precedence rule.
   registerProductIdsRoutes(app);
   registerSearchRoutes(app);
+  // Scan-label (change label-scan-product-lookup, task 2.2) — a distinct
+  // POST route under the products prefix; no GET capture conflict with
+  // search's /:id route (different method).
+  registerScanLabelRoutes(app);
   registerUnitPriceRoutes(app);
   registerProductDupesRoutes(app);
   registerWhatIfRoutes(app);
