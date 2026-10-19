@@ -92,6 +92,21 @@
   "analytics_engine_datasets": [
     { "binding": "METRICS", "dataset": "rajahinta-api-metrics-dev" }
   ],
+  // Workers AI binding (change label-scan-product-lookup, task 2.1; design
+  // D1): powers POST /api/v1/products/scan-label — label photo → model →
+  // funnel in one server-side round trip. The pinned model constant lives
+  // in the scan-label route module (task 2.2), never here; the model was
+  // chosen in the label-scan spike (2026-10-16, design D2).
+  //
+  // RE-DECLARED IN EVERY env BLOCK BELOW on purpose: `ai` is a
+  // not-inherited key in wrangler (same rule as durable_objects/workflows
+  // above) — a top-level-only entry logs a warning and deploys each named
+  // environment WITHOUT the binding.
+  //
+  // Privacy (design D7): label image bytes are processed in memory and
+  // never logged or persisted — the route's code path touches no storage
+  // binding, and logs carry extracted fields, never pixels.
+  "ai": { "binding": "AI" },
   // Price-ingestion Queue (task 4.1; design D6). The scheduled producer
   // (hourly cron, merchant-registry driven) sends via env.INGESTION_QUEUE;
   // this same worker consumes the queue. max_batch_size 1 = per-merchant
@@ -310,6 +325,9 @@
       "analytics_engine_datasets": [
         { "binding": "METRICS", "dataset": "rajahinta-api-metrics-dev" }
       ],
+      // Workers AI — re-declared per env (`ai` is not inherited; see the
+      // top-level "ai" note).
+      "ai": { "binding": "AI" },
       // Per-env snapshot object key (task 4.4, design D9). Code default
       // (config/rate-snapshot.json) matches; the var makes the override
       // point explicit per environment.
@@ -385,6 +403,9 @@
       "analytics_engine_datasets": [
         { "binding": "METRICS", "dataset": "rajahinta-api-metrics-staging" }
       ],
+      // Workers AI — re-declared per env (`ai` is not inherited; see the
+      // top-level "ai" note).
+      "ai": { "binding": "AI" },
       // Freshness alerting (task 6.3, design D7/D8) — PLACEHOLDERS; see the
       // dev block comment. Secret via `wrangler secret put EMAIL_SEND_SECRET
       // --env staging`. The EMAIL_WORKER service binding carries the send
@@ -482,6 +503,9 @@
       "analytics_engine_datasets": [
         { "binding": "METRICS", "dataset": "rajahinta-api-metrics-production" }
       ],
+      // Workers AI — re-declared per env (`ai` is not inherited; see the
+      // top-level "ai" note).
+      "ai": { "binding": "AI" },
       // Freshness alerting (task 6.3, design D7/D8): real production values
       // (2026-09-07 go-live). The alert targets the operator inbox, which is
       // also the send_email binding's pinned destination.
