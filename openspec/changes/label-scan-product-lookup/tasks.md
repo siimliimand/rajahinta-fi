@@ -12,14 +12,14 @@
 
 ## 3. Scan page (frontend)
 
-- [ ] 3.1 `/scan` route + client component: `getUserMedia` single-shot capture with fill-the-frame guidance, client-side downscale (longest edge ~1024 px, JPEG), scan-label POST, four states (extracting / candidates / no-result / camera-denied), top-3 candidate cards (name, ABV, volume, lowest observed price) with tap-to-confirm navigation to `/products/[id]` (never auto-redirect), no-result handoff to catalog search with extracted brand prefilled, privacy microcopy (fi/en), dynamic import so the camera surface stays out of the main bundle <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [apps/frontend/src/app/[locale]/scan/page.tsx, apps/frontend/src/app/[locale]/scan/scan-client.tsx, apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] -->
+- [x] 3.1 `/scan` route + client component: `getUserMedia` single-shot capture with fill-the-frame guidance, client-side downscale (longest edge ~1024 px, JPEG), scan-label POST, four states (extracting / candidates / no-result / camera-denied), top-3 candidate cards (name, ABV, volume, lowest observed price) with tap-to-confirm navigation to `/products/[id]` (never auto-redirect), no-result handoff to catalog search with extracted brand prefilled, privacy microcopy (fi/en), dynamic import so the camera surface stays out of the main bundle <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [apps/frontend/src/app/[locale]/scan/page.tsx, apps/frontend/src/app/[locale]/scan/scan-client.tsx, apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] -->
 - [ ] 3.2 Component tests: states render from mocked API responses (three candidates / zero candidates / 502 retryable / camera rejection), no navigation without tap, privacy notice present <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [apps/frontend/src/app/[locale]/scan/__tests__/scan-client.test.tsx] -->
 - [ ] 3.3 Scan entry affordance in the products-page search area (icon button, fi/en label, links to `/scan`) <!-- agent: platform-engineer.fast, depends_on: [3.1], touches: [apps/frontend/src/app/[locale]/products/components/, apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] -->
 
 ## 4. Docs
 
 - [x] 4.1 Footer privacy copy: add the "label photos are processed in memory and never stored" sentence next to the analytics note (fi/en message keys) <!-- agent: platform-engineer.fast, depends_on: [], touches: [apps/frontend/src/app/[locale]/components/SiteFooter.tsx, apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] -->
-- [ ] 4.2 ARCHITECTURE.md module note: scan-label route, label-candidates repository, Workers AI binding and pinned model under the api-worker/frontend sections <!-- agent: platform-engineer.fast, depends_on: [2.2], touches: [ARCHITECTURE.md] -->
+- [x] 4.2 ARCHITECTURE.md module note: scan-label route, label-candidates repository, Workers AI binding and pinned model under the api-worker/frontend sections <!-- agent: platform-engineer.fast, depends_on: [2.2], touches: [ARCHITECTURE.md] -->
 
 ## 5. Verification
 
