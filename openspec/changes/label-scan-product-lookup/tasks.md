@@ -13,8 +13,8 @@
 ## 3. Scan page (frontend)
 
 - [x] 3.1 `/scan` route + client component: `getUserMedia` single-shot capture with fill-the-frame guidance, client-side downscale (longest edge ~1024 px, JPEG), scan-label POST, four states (extracting / candidates / no-result / camera-denied), top-3 candidate cards (name, ABV, volume, lowest observed price) with tap-to-confirm navigation to `/products/[id]` (never auto-redirect), no-result handoff to catalog search with extracted brand prefilled, privacy microcopy (fi/en), dynamic import so the camera surface stays out of the main bundle <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [apps/frontend/src/app/[locale]/scan/page.tsx, apps/frontend/src/app/[locale]/scan/scan-client.tsx, apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] -->
-- [ ] 3.2 Component tests: states render from mocked API responses (three candidates / zero candidates / 502 retryable / camera rejection), no navigation without tap, privacy notice present <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [apps/frontend/src/app/[locale]/scan/__tests__/scan-client.test.tsx] -->
-- [ ] 3.3 Scan entry affordance in the products-page search area (icon button, fi/en label, links to `/scan`) <!-- agent: platform-engineer.fast, depends_on: [3.1], touches: [apps/frontend/src/app/[locale]/products/components/, apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] -->
+- [x] 3.2 Component tests: states render from mocked API responses (three candidates / zero candidates / 502 retryable / camera rejection), no navigation without tap, privacy notice present <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [apps/frontend/src/app/[locale]/scan/__tests__/scan-client.test.tsx] -->
+- [x] 3.3 Scan entry affordance in the products-page search area (icon button, fi/en label, links to `/scan`) <!-- agent: platform-engineer.fast, depends_on: [3.1], touches: [apps/frontend/src/app/[locale]/products/components/, apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] -->
 
 ## 4. Docs
 
