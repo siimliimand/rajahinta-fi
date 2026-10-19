@@ -1679,6 +1679,8 @@
     "rateLimitedWait": "The limit resets in about {seconds} seconds.",
     "errorTitle": "Recognition failed",
     "errorBody": "The label could not be read right now. You can try again with a new photo.",
+    "captureFailedTitle": "Capture failed",
+    "captureFailedBody": "The camera did not produce a readable picture. Make sure the label fills the frame in good light, then take a new photo.",
     "retryScanLabel": "Take a new photo"
   },
   "OperatorConsole": {

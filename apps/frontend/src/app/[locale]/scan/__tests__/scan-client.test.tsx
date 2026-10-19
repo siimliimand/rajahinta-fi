@@ -154,7 +154,9 @@ beforeEach(() => {
   stubMediaDevices(true);
 
   // The preview frame the capture grabs: jsdom reports no intrinsic video
-  // size, so a landscape sensor frame is pinned at the prototype.
+  // size, so a landscape sensor frame is pinned at the prototype. The
+  // frame data is present (HAVE_CURRENT_DATA) — the painted-frame wait in
+  // frameToJpegBlob short-circuits; the unpainted path is covered below.
   Object.defineProperty(HTMLVideoElement.prototype, 'videoWidth', {
     configurable: true,
     value: 2048,
@@ -162,6 +164,10 @@ beforeEach(() => {
   Object.defineProperty(HTMLVideoElement.prototype, 'videoHeight', {
     configurable: true,
     value: 1536,
+  });
+  Object.defineProperty(HTMLMediaElement.prototype, 'readyState', {
+    configurable: true,
+    value: HTMLMediaElement.HAVE_CURRENT_DATA,
   });
   // jsdom's play() is a not-implemented stub returning undefined, which
   // would break the component's `play().catch(...)` attachment.
@@ -179,7 +185,10 @@ beforeEach(() => {
   Object.defineProperty(HTMLCanvasElement.prototype, 'toBlob', {
     configurable: true,
     value: (callback: BlobCallback) => {
-      callback(new Blob(['fake-jpeg-bytes'], { type: 'image/jpeg' }));
+      // 20 KB — a real downscaled label frame encodes to tens of KB, so
+      // the happy path clears SCAN_MIN_BLOB_BYTES; the black-capture
+      // tests below override this with a few-KB blob.
+      callback(new Blob([new Uint8Array(20_000)], { type: 'image/jpeg' }));
     },
   });
 
@@ -487,9 +496,14 @@ describe('ScanClient extracting state', () => {
     await user.click(screen.getByTestId('scan-start'));
     await screen.findByTestId('scan-preview');
 
-    // The camera ask is the rear camera (fill-the-frame capture)…
+    // The camera ask is the rear camera at a sane capture resolution
+    // (fill-the-frame capture; 'ideal' never fails the ask)…
     expect(getUserMedia).toHaveBeenCalledWith({
-      video: { facingMode: 'environment' },
+      video: {
+        facingMode: 'environment',
+        width: { ideal: 1280 },
+        height: { ideal: 1280 },
+      },
       audio: false,
     });
     // …and the preview carries the capture guidance affordance.
@@ -656,5 +670,78 @@ describe('ScanClient quota (429)', () => {
       screen.getByText('Raja palautuu noin 600 sekunnin kuluttua.'),
     ).toBeInTheDocument();
     expectNoImperativeNavigation();
+  });
+});
+
+describe('ScanClient black-capture guard (client-side sanity gate)', () => {
+  it('renders the capture-recovery state — never the endpoint — when the encoded frame is below the readable floor', async () => {
+    const user = userEvent.setup();
+    // The prod incident: an unpainted/black canvas compresses to a few
+    // KB (two identical 2742-byte uploads reached the model). The gate
+    // must answer locally, before any scan-label round-trip.
+    Object.defineProperty(HTMLCanvasElement.prototype, 'toBlob', {
+      configurable: true,
+      value: (callback: BlobCallback) => {
+        callback(new Blob([new Uint8Array(2_742)], { type: 'image/jpeg' }));
+      },
+    });
+
+    renderWithIntl(<ScanClient />);
+    await startAndCapture(user);
+
+    expect(await screen.findByTestId('scan-capture-failed')).toBeInTheDocument();
+    expect(screen.getByTestId('scan-root')).toHaveAttribute(
+      'data-status',
+      'capture-failed',
+    );
+    expect(screen.getByText('Kuvankaappaus ei onnistunut')).toBeInTheDocument();
+    expect(mockedApiFetch).not.toHaveBeenCalled();
+    expect(mockedBuildHeaders).not.toHaveBeenCalled();
+    expectNoImperativeNavigation();
+
+    // Recovery is a fresh capture, back to idle.
+    await user.click(screen.getByRole('button', { name: 'Ota uusi kuva' }));
+    expect(screen.getByTestId('scan-root')).toHaveAttribute('data-status', 'idle');
+  });
+
+  it('waits for a painted frame when only metadata has loaded, then uploads', async () => {
+    const user = userEvent.setup();
+    // readyState 1 (HAVE_METADATA): videoWidth is set but no frame data
+    // has arrived — exactly the black-capture precondition.
+    Object.defineProperty(HTMLMediaElement.prototype, 'readyState', {
+      configurable: true,
+      value: HTMLMediaElement.HAVE_METADATA,
+    });
+    mockedApiFetch.mockResolvedValue(apiResponse(200, scanResult([])));
+
+    renderWithIntl(<ScanClient />);
+    await user.click(screen.getByTestId('scan-start'));
+    await screen.findByTestId('scan-preview');
+    await user.click(screen.getByTestId('scan-capture'));
+
+    // The video is still mounted (status is preview while the capture
+    // waits) — its loadeddata event completes the wait.
+    screen.getByTestId('scan-video').dispatchEvent(new Event('loadeddata'));
+
+    expect(await screen.findByTestId('scan-no-result')).toBeInTheDocument();
+    expect(mockedApiFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers the capture-recovery state when the grab throws and still releases the camera', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(HTMLVideoElement.prototype, 'videoWidth', {
+      configurable: true,
+      value: 0,
+    });
+
+    renderWithIntl(<ScanClient />);
+    await startAndCapture(user);
+
+    expect(await screen.findByTestId('scan-capture-failed')).toBeInTheDocument();
+    expect(screen.getByTestId('scan-root')).toHaveAttribute(
+      'data-status',
+      'capture-failed',
+    );
+    expect(mockedApiFetch).not.toHaveBeenCalled();
   });
 });

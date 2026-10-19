@@ -64,7 +64,12 @@ The funnel SHALL retrieve candidates with a token-AND `MATCH` over `product_mast
 
 ### Requirement: Scan page experience
 
-The frontend SHALL provide a locale-aware `/scan` route (fi default, en translation) that captures a single photo via `getUserMedia` with capture guidance (fill-the-frame affordance), downsizes it client-side (longest edge ~1024 px, JPEG) before upload, and renders one of four states: extracting, candidates, no-result, or camera-denied/unsupported. The candidate state SHALL present at most three cards (name, ABV, unit volume, lowest observed price) and SHALL navigate to `/products/[id]` only on explicit tap — never by auto-redirect. The no-result state SHALL offer a manual catalog search seeded with the transcribed brand text. The page SHALL display a privacy notice stating the photo is processed in memory and never stored, and SHALL NOT render camera output until permission is granted.
+The frontend SHALL provide a locale-aware `/scan` route (fi default, en translation) that captures a single photo via `getUserMedia` with capture guidance (fill-the-frame affordance), downsizes it client-side (longest edge ~1024 px, JPEG) before upload, and renders its journey states: extracting, candidates, no-result, or camera-denied/unsupported, plus typed recovery states for the endpoint's age-gate, quota, model-failure answers, and for a capture that produced no readable frame. A capture whose encoded frame is below a readable floor (an unpainted/black grab) SHALL render the capture-recovery state without calling the scan-label endpoint. The candidate state SHALL present at most three cards (name, ABV, unit volume, lowest observed price) and SHALL navigate to `/products/[id]` only on explicit tap — never by auto-redirect. The no-result state SHALL offer a manual catalog search seeded with the transcribed brand text. The page SHALL display a privacy notice stating the photo is processed in memory and never stored, and SHALL NOT render camera output until permission is granted.
+
+#### Scenario: Black capture never reaches the endpoint
+
+- **WHEN** the encoded capture is below the readable floor (the video element had no painted frame data at grab time)
+- **THEN** the page renders the capture-recovery state with a retry prompt without calling the scan-label endpoint
 
 #### Scenario: Confirm-before-navigate
 

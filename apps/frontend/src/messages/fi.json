@@ -1679,6 +1679,8 @@
     "rateLimitedWait": "Raja palautuu noin {seconds} sekunnin kuluttua.",
     "errorTitle": "Tunnistus epäonnistui",
     "errorBody": "Etiketin lukeminen ei onnistunut juuri nyt. Voit yrittää uudelleen ottamalla uuden kuvan.",
+    "captureFailedTitle": "Kuvankaappaus ei onnistunut",
+    "captureFailedBody": "Kamera ei antanut luettavaa kuvaa. Varmista hyvä valaistus ja että etiketti täyttää kehyksen, ja ota uusi kuva.",
     "retryScanLabel": "Ota uusi kuva"
   },
   "OperatorConsole": {
