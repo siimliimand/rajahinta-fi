@@ -44,7 +44,8 @@ import { routing, type AppLocale, type AppPathnames } from '@/i18n/routing';
  * the tool pages /event, /trip, /what-if and /value by
  * price-intelligence-roadmap task 6.2; /group-order by
  * consumer-clarity-and-discovery task 4.1 — public, individually
- * titled pages every locale serves). Entries are internal route names
+ * titled pages every locale serves); /scan by label-scan-product-lookup
+ * task 3.1. Entries are internal route names
  * keyed against routing.pathnames (`satisfies` keeps the list in
  * lockstep with the vocabulary); the emitted URL text is the locale's
  * localized segment (design D1). The /blog and /guides paths are
@@ -67,6 +68,7 @@ const STATIC_PATHS = [
   '/guides',
   '/allowances',
   '/savings',
+  '/scan',
   '/about',
   '/contact',
 ] as const satisfies readonly AppPathnames[];

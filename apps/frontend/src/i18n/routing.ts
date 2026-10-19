@@ -32,6 +32,7 @@ export const routing = defineRouting({
     '/value': { fi: '/grammahinta', en: '/value' },
     '/ranking': { fi: '/jarjestys', en: '/ranking' },
     '/savings': { fi: '/saastolista', en: '/savings' },
+    '/scan': { fi: '/skannaus', en: '/scan' },
     '/allowances': { fi: '/tullivapaat', en: '/allowances' },
     '/group-order': { fi: '/ryhmatilaus', en: '/group-order' },
     '/blog': { fi: '/blogi', en: '/blog' },
