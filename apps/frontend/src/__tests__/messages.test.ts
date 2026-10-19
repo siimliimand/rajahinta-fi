@@ -429,6 +429,14 @@ describe('honest-state catalog key parity (3.1 + 3.2)', () => {
     expectParity('ProductsPage', null, ['didYouMean']);
   });
 
+  // ── Scan entry affordance (label-scan-product-lookup task 3.3): the
+  // catalog search row's icon-button label pair — the spec's only
+  // in-catalog entry to /scan — must exist, translated, in both locales. ──
+
+  it('Scan.entry* carries the catalog search-row entry labels in parity', () => {
+    expectParity('Scan', null, ['entryLabel', 'entryAriaLabel']);
+  });
+
   // ── Dated pre-dispatch walkthrough (import-filing-assistant task 2.4):
   // the guidance panel's dated-checklist copy renders only from these
   // keys — both locales must carry the exact sets, genuinely translated. ──

@@ -1650,6 +1650,8 @@
   "Scan": {
     "metaTitle": "Label recognition — observed prices",
     "metaDescription": "Photograph a beverage bottle label and find the matching catalog product with its observed prices.",
+    "entryLabel": "Recognize a label from a photo",
+    "entryAriaLabel": "Open label recognition",
     "heading": "Label recognition",
     "intro": "Take a photo of a bottle label. The service reads the text from the photo and lists the matching catalog products for you to confirm.",
     "privacyNotice": "Bottle label photos submitted to the scan feature are processed in memory and never stored.",

@@ -1650,6 +1650,8 @@
   "Scan": {
     "metaTitle": "Etiketin tunnistus — havaitut hinnat",
     "metaDescription": "Ota kuva juomapullon etiketistä ja etsi vastaava tuote valikosta havaittuine hintoineen.",
+    "entryLabel": "Tunnista etiketti kuvalla",
+    "entryAriaLabel": "Avaa etiketin tunnistus",
     "heading": "Etiketin tunnistus",
     "intro": "Ota kuva pullon etiketistä. Palvelu lukee tekstin kuvasta ja esittää valikosta löytyneet vastaavuudet vahvistettavaksi.",
     "privacyNotice": "Etikettivalokuvat käsitellään muistissa eikä niitä koskaan tallenneta.",

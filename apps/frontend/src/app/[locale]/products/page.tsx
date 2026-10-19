@@ -23,6 +23,7 @@ import {
   ReliabilityBadge,
 } from '@/components/ui';
 import CategoryAlertAction from './components/CategoryAlertAction';
+import ScanEntryButton from './components/ScanEntryButton';
 import { paginationSlots } from './pagination';
 import {
   CANONICAL_CATEGORIES,
@@ -408,6 +409,11 @@ export default async function ProductsPage({
   const q = resolveQParam(query.q);
 
   const t = await getTranslations({ locale, namespace: 'ProductsPage' });
+  // Scan entry labels (task 3.3, change label-scan-product-lookup) live
+  // under the Scan namespace and resolve here — the server owns the
+  // vocabulary; ScanEntryButton stays a sync presentational server
+  // component (the CategoryAlertAction categoryLabel precedent).
+  const tScan = await getTranslations({ locale, namespace: 'Scan' });
   // Root-scoped so the €/g chip's reliability label resolves through the
   // canonical labelKey contract in RELIABILITY_STATUS_META — the same
   // source of truth as the home trust-row, the compare view, and the
@@ -506,6 +512,14 @@ export default async function ProductsPage({
           placeholder={t('searchPlaceholder')}
           maxLength={CATALOG_MAX_QUERY_LENGTH}
           className="touch-target w-64 max-w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 placeholder:text-gray-400"
+        />
+        {/* ── Scan entry (task 3.3, change label-scan-product-lookup):
+            the spec's only in-catalog entry to /scan — one icon button
+            beside the search input, immediately after it so it stays
+            thumb-reachable when the row wraps on a phone. ── */}
+        <ScanEntryButton
+          label={tScan('entryLabel')}
+          ariaLabel={tScan('entryAriaLabel')}
         />
         <button type="submit" className={FILTER_LINK_CLASSES.join(' ')}>
           {t('searchSubmit')}
