@@ -216,7 +216,12 @@
   //                 ranking, 7-day ageing threshold; spec delta
   //                 merchant-reliability-scoring).
 //   0 2 * * *     tax-dataset review — BullMQ fired 02:00 Europe/Helsinki
-//   30 3 * * *    calculation-record retention sweep — BullMQ 03:30 Helsinki
+//   30 3 * * *    nightly retention sweeps — calculation-record retention
+//                 (BullMQ 03:30 Helsinki), the contact_messages 90-day
+//                 sweep, and the retail-offers 30-day superseded-row sweep
+//                 (change d1-read-cost-reduction: report-only dry-run
+//                 default, the live flip is an owner-gated one-line
+//                 change, src/cron/retail-offers-retention.ts)
 //   0 5 1 * *     Curated rate refresh — monthly; the carrier datasets are
 //                 curated in-repo (no live carrier feed), the tick syncs
 //                 the DB with the source files and skips unchanged data
@@ -460,10 +465,13 @@
       // fransberg refresh, preference digest). Staging ingestion was
       // already manual-only (above); re-enable by restoring the
       // pre-stop array and running `wrangler triggers deploy --env staging`:
-      //   */30 * * * *  aggregation + freshness alert
-      //   0 */6 * * *   transport refresh + click flush
+      //   */30 * * * *  aggregation, freshness alert, price alerts, savings
+      //                 snapshots, outcome margins
+      //   0 */6 * * *   transport refresh, click flush, reliability
+      //                 aggregates, data-quality gauges
       //   0 2 * * *     tax review
-      //   30 3 * * *    retention sweep
+      //   30 3 * * *    retention sweeps (calc records, contacts, retail
+      //                 offers)
       //   0 5 1 * *     fransberg refresh (monthly)
       //   0 6 * * 1     preference digest (also var-gated)
       //   0 0 1 1 *     calendar skeleton (annual, January)
