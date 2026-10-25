@@ -21,6 +21,6 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Run typecheck, eslint, unit suites, and the D1 suite; fix fallout <!-- agent: platform-engineer.fast, depends_on: [2.3, 3.2], touches: [] -->
+- [x] 5.1 Run typecheck, eslint, unit suites, and the D1 suite; fix fallout <!-- agent: platform-engineer.fast, depends_on: [2.3, 3.2], touches: [] -->
 - [ ] 5.2 Staging deploy + smoke: staging crons are disabled (2026-10-14 override), so verify via manual scheduled-event invocation of the moved handlers and the retention DRY-RUN against staging D1 (candidate report reviewed, zero deletions); confirm EXPLAIN pins against staging data; record the dry-run report for the owner gate <!-- agent: devops-engineer.fast, depends_on: [5.1], touches: [] -->
 - [ ] 5.3 Production rollout (OWNER-GATED): apply migration 0041 to prod D1; deploy worker; retention dry-run report review, then live mode flip by owner decision; 48 h GraphQL `rowsRead/day` observation vs the 165M/day baseline (expect < 15M/day); review the Billing budget-alert threshold <!-- agent: devops-engineer.fast, depends_on: [5.2], touches: [] -->
