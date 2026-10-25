@@ -446,18 +446,24 @@ describe('verified-ageing sweep plan (task 1.2, change freshness-sweep-index)', 
     expect(details).not.toMatch(/\bSCAN retail_offers\b/);
   });
 
-  it('lock sensitivity: without the index the same statement plans as a full scan', async () => {
+  it('lock sensitivity: without the indexes the same statement plans as a full scan', async () => {
     const { db } = createDb();
     await seedProduct(db, 1);
     await seedOffer(db, 11, 'beverage-de', AGED_AT, 'VERIFIED');
     db.exec('DROP INDEX retail_offers_reliability_status_observed_at_idx');
+    // Migration 0041 (d1-read-cost-reduction) added an observed_at-leading
+    // index that second-covers this predicate's range — dropping only
+    // 0036's index now lands on a bounded SEARCH, not the regression.
+    // The negative control reproduces the bare scan by dropping both
+    // observed_at-serving indexes.
+    db.exec('DROP INDEX retail_offers_observed_at_product_idx');
 
     const details = sweepPlan(db);
 
-    // The regression the change guards against, reproduced: no other
-    // retail_offers index leads with reliability_status, so dropping
-    // 0036's puts the sweep back on the 241k-rows/tick full scan —
-    // proof the matcher above actually catches it.
+    // The regression the change guards against, reproduced: no
+    // retail_offers index leads with reliability_status or observed_at,
+    // so dropping both puts the sweep back on the 241k-rows/tick full
+    // scan — proof the matcher above actually catches it.
     expect(details).toMatch(/\bSCAN retail_offers\b/);
     expect(details).not.toMatch(
       /USING INDEX retail_offers_reliability_status_observed_at_idx/,

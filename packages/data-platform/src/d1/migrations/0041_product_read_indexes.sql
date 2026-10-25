@@ -1,0 +1,34 @@
+-- Task 1.1 (change d1-read-cost-reduction): the three read indexes for
+-- the unindexed hot-path consumers measured against production
+-- (product_master 23,489 rows / retail_offers 282,253 rows, 2026-10):
+--
+-- 1. `product_master_ean_idx` — the ingestion upsert's Tier-1 match
+--    (D1UpsertRepository FIND_BY_EAN_SQL,
+--    apps/api-worker/src/adapters/d1-upsert.repository.ts) filters
+--    `WHERE ean = ?` once per mapped product per feed run; with only
+--    product_master_category_idx present that predicate is a full
+--    catalog scan per row.
+--
+-- 2. `product_master_name_brand_container_volume_idx` — the Tier-2
+--    compound match (FIND_BY_COMPOUND_SQL, same file) filters on the
+--    (name, brand, container_type, unit_volume) key when no EAN match
+--    exists; same scan-per-row cost class. Column order matches the
+--    predicate: equality on all four.
+--
+-- 3. `retail_offers_observed_at_product_idx` — the bounded coverage
+--    gauge (SUMMARY_COVERAGE_BOUNDED_SQL,
+--    apps/api-worker/src/cron/time-series-aggregation.ts) counts
+--    `COUNT(DISTINCT product_id) WHERE observed_at >= ?` on every
+--    aggregation tick; the existing retail_offers indexes all lead
+--    with merchant/product_id/reliability_status, so the window was a
+--    full history scan. Leading observed_at bounds the range walk and
+--    trailing product_id makes the count covering (index-only).
+--
+-- IF NOT EXISTS despite the runner applying each file exactly once
+-- (wrangler d1 migrations filename-order semantics): a stray re-apply
+-- of the statement stays a no-op instead of an abort.
+CREATE INDEX IF NOT EXISTS `product_master_ean_idx` ON `product_master` (`ean`);
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `product_master_name_brand_container_volume_idx` ON `product_master` (`name`, `brand`, `container_type`, `unit_volume`);
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `retail_offers_observed_at_product_idx` ON `retail_offers` (`observed_at`, `product_id`);
