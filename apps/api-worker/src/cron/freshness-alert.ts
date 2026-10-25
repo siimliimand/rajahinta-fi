@@ -87,9 +87,11 @@ import type { Logger } from '../logger';
  * aggregation tick (`AGGREGATION_CRON`, already in wrangler
  * triggers.crons). Mapping to the replaced Prometheus evaluation: the
  * in-cluster rules were evaluated on the scrape interval with `for`
- * windows of 15–30 min; the checker runs where the stale-share value
- * itself is recomputed, so every replaced `for` window is covered by a
- * single cadence and alert latency is bounded by one tick (≤30 min).
+ * windows of 15–30 min; the checker still fires every 30 min while the
+ * stale-share figure it reads is refreshed six-hourly (task 2.3, change
+ * d1-read-cost-reduction) and may lag one refresh interval — the spec'd
+ * tolerance — so every replaced `for` window is covered by a single
+ * cadence and alert latency is bounded by one tick (≤30 min).
  */
 export const FRESHNESS_ALERT_CRON = AGGREGATION_CRON;
 

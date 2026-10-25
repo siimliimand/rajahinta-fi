@@ -3,14 +3,24 @@
  * routed by cron pattern.
  *
  * Wrangler invokes `scheduled` with the exact pattern that fired
- * (`event.cron`); the router maps each pattern to its handler set. Two
- * patterns carry TWO handlers each — the 6-hourly one the transport-rate
- * refresh (BullMQ EVERY_6_HOURS parity) plus the task-3.4 click-counter
- * snapshot flush, and the 30-minute one the time-series aggregation plus
- * the task-6.3 freshness alert — dispatched independently with
- * per-handler error isolation: one failing handler must not starve the
- * others on the same tick, and a throw inside one waitUntil must not
- * mark the whole invocation dead.
+ * (`event.cron`); the router maps each pattern to its handler set. The
+ * 30-minute pattern carries the time-series aggregation, the freshness
+ * alert (its VERIFIED→STALE ageing sweep is index-bounded and stays on
+ * this tick), price-alert evaluation, savings snapshots, and outcome
+ * margins; the 6-hourly pattern carries the transport-rate refresh, the
+ * task-3.4 click-counter snapshot flush, the merchant-reliability
+ * aggregates refresh, and the data-quality gauges — dispatched
+ * independently with per-handler error isolation: one failing handler
+ * must not starve the others on the same tick, and a throw inside one
+ * waitUntil must not mark the whole invocation dead.
+ *
+ * The reliability refresh and the gauges moved off the 30-minute tick
+ * (task 2.3, change d1-read-cost-reduction, design D2): the 30-minute
+ * full-window scan was the 2026-10 billing period's largest single read
+ * consumer, and the 6-hourly cadence cuts it ~12×. The staleness
+ * contract moves with it — materialized reliability figures may lag up
+ * to one refresh interval (six hours; spec delta
+ * merchant-reliability-scoring).
  *
  * The monthly `0 5 1 * *` pattern carries the Fransberg curated-dataset
  * sync (no BullMQ parity — the dataset is edited in-repo, there is no
@@ -117,7 +127,7 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
     name: 'ferry-price-refresh',
     run: (env, log) => handleFerryPriceRefresh(env, log),
   });
-  // The task-3.4 click-counter flush shares the 6-hourly pattern.
+  // Task 3.4 click-counter flush shares the 6-hourly pattern.
   add(TRANSPORT_REFRESH_CRON, {
     name: 'click-counter-flush',
     run: (env, log) =>
@@ -130,6 +140,26 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
         return result;
       }),
   });
+  // Task 2.3 (change d1-read-cost-reduction, design D2): the reliability
+  // refresh moved off the 30-minute tick — its full-window `retail_offers`
+  // scan was the 2026-10 billing period's largest single read consumer and
+  // 6-hourly cuts it ~12×. Staleness contract moves with it: materialized
+  // figures may lag up to one refresh interval (spec delta
+  // merchant-reliability-scoring; the embed is display-only, never feeds
+  // ranking, and the ageing threshold is 7 days).
+  add(TRANSPORT_REFRESH_CRON, {
+    name: 'merchant-reliability-aggregates',
+    run: (env, log) => handleMerchantReliabilityAggregates(env, log),
+  });
+  // Task 2.3 (change d1-read-cost-reduction, design D3): the cadence
+  // gauges ride the same 6-hourly tick, registered AFTER the reliability
+  // refresh so the per-feed last-success gauge reads same-tick
+  // materialized rows instead of re-deriving them. Best-effort as before
+  // — the one-tick writer never throws (per-gauge isolation inside).
+  add(TRANSPORT_REFRESH_CRON, {
+    name: 'data-quality-gauges',
+    run: (env, log) => measureAndRecordDataQualityGauges(env, log),
+  });
   add(TAX_REVIEW_CRON, {
     name: 'tax-dataset-review',
     run: (env, log) => handleTaxDatasetReview(env, log),
@@ -139,19 +169,15 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
     run: (env, log) => handleTimeSeriesAggregation(env, log),
   });
   // Task 6.3 (design D7/D8) shares the 30-minute tick: the freshness
-  // alert evaluates the stale-price-share invariant over the same cadence
-  // the gauge value is recomputed, replacing the PrometheusRule paging
-  // (threshold port + cadence mapping in src/cron/freshness-alert.ts).
+  // alert evaluates the stale-price-share invariant every 30 min,
+  // replacing the PrometheusRule paging (threshold port + cadence
+  // mapping in src/cron/freshness-alert.ts). Its share reads the
+  // materialized aggregates and may lag one refresh interval — the
+  // spec'd tolerance; the VERIFIED→STALE ageing sweep inside stays on
+  // this tick (index-bounded per the merchant-reliability-scoring spec).
   add(AGGREGATION_CRON, {
     name: 'freshness-alert',
     run: (env, log) => handleFreshnessAlert(env, log),
-  });
-  // Task 2.1 (change merchant-reliability-materialized-aggregates):
-  // registered AFTER freshness-alert so the tick's VERIFIED→STALE ageing
-  // write-back is reflected same-tick (the 2026-10 D1 billing incident fix).
-  add(AGGREGATION_CRON, {
-    name: 'merchant-reliability-aggregates',
-    run: (env, log) => handleMerchantReliabilityAggregates(env, log),
   });
   // Task 2.2 (design R2) shares the same 30-minute post-ingestion tick:
   // price-alert evaluation reads the materialized summaries the
@@ -179,14 +205,6 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
   add(AGGREGATION_CRON, {
     name: 'outcome-margins',
     run: (env, log) => handleOutcomeMargins(env, log),
-  });
-  // Task 4.1 (data-quality-and-publication-trust) shares the same 30-min
-  // tick: the cadence gauges (Alko reference coverage, transport rows,
-  // per-feed last-success age) are D1-measured and written best-effort —
-  // the one-tick writer never throws (per-gauge isolation inside).
-  add(AGGREGATION_CRON, {
-    name: 'data-quality-gauges',
-    run: (env, log) => measureAndRecordDataQualityGauges(env, log),
   });
   add(RETENTION_CRON, {
     name: 'retention-sweep',

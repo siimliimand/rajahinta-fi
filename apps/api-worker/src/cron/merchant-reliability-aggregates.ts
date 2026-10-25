@@ -143,13 +143,16 @@ export interface MerchantReliabilityAggregatesDeps {
 }
 
 /**
- * One aggregation-tick refresh of `merchant_reliability_aggregates`:
- * recompute the live aggregate (the migration-0035 seed query), then
- * replace the table's contents delete-then-insert in ONE
- * `batch()` — D1's implicit multi-statement transaction. Register on the
- * 30-minute aggregation tick (`AGGREGATION_CRON`, router.ts) strictly
- * after freshness-alert so the tick's VERIFIED → STALE ageing write-back
- * is reflected same-tick.
+ * One scheduled refresh of `merchant_reliability_aggregates`: recompute
+ * the live aggregate (the migration-0035 seed query), then replace the
+ * table's contents delete-then-insert in ONE `batch()` — D1's implicit
+ * multi-statement transaction. Register on the six-hourly
+ * transport-refresh tick (`TRANSPORT_REFRESH_CRON`, router.ts; task 2.3,
+ * change d1-read-cost-reduction) after the click-counter flush and
+ * before the data-quality gauges — the 30-minute full-window scan was
+ * the 2026-10 billing period's largest single read consumer, and the
+ * staleness contract is now bounded by the refresh interval (spec delta
+ * merchant-reliability-scoring).
  *
  * Throws on failure — the router's per-handler isolation logs it and the
  * previous refresh stays intact (single-batch atomicity).
