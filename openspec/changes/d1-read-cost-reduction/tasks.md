@@ -17,7 +17,7 @@
 
 ## 4. Docs
 
-- [ ] 4.1 ARCHITECTURE.md module notes (index inventory, six-hourly refresh contract, staleness tolerance, retention window, materialized gauge reads); wrangler.jsonc cron documentation matches the new routing <!-- agent: platform-engineer.fast, depends_on: [2.3, 3.2], touches: [ARCHITECTURE.md, apps/api-worker/wrangler.jsonc] -->
+- [x] 4.1 ARCHITECTURE.md module notes (index inventory, six-hourly refresh contract, staleness tolerance, retention window, materialized gauge reads); wrangler.jsonc cron documentation matches the new routing <!-- agent: platform-engineer.fast, depends_on: [2.3, 3.2], touches: [ARCHITECTURE.md, apps/api-worker/wrangler.jsonc] -->
 
 ## 5. Verification
 
