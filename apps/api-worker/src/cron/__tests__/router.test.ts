@@ -122,7 +122,7 @@ describe('retail-offers-retention registration (task 3.2, change d1-read-cost-re
     ]);
   });
 
-  it('registers the handler with no deps override — the default dry-run mode survives dispatch', async () => {
+  it('registers the owner-approved live flip — dispatch deletes the superseded candidate, keeps the deterministic-latest', async () => {
     const { db, d1 } = openMigratedD1();
     await db
       .prepare(
@@ -137,7 +137,7 @@ describe('retail-offers-retention registration (task 3.2, change d1-read-cost-re
        VALUES (?, ?, 'DE', ?, 250, 'EUR', ?, 'ESTIMATED')`,
     );
     // A superseded row far past the 30-day window plus its newer same-pair
-    // latest — exactly one deletable candidate for the dry-run to report.
+    // latest — exactly one deletable candidate for the live pass to delete.
     await insertOffer.run(11, 'beverage-de', 1, '2020-01-01T00:00:00.000Z');
     await insertOffer.run(12, 'beverage-de', 1, '2026-10-20T00:00:00.000Z');
 
@@ -151,21 +151,24 @@ describe('retail-offers-retention registration (task 3.2, change d1-read-cost-re
     }
 
     // The routing table's own run — exactly what the nightly tick calls.
+    // LIVE since 2026-10-25 (owner decision after the verification-5.3
+    // dry-run report): the registration binds { mode: 'live' }, so the
+    // dispatch deletes the candidate and keeps the deterministic-latest.
     const result = (await handler.run(
       { DB: d1 } as unknown as Env,
       createLogger('error'),
     )) as RetailOffersRetentionResult;
 
-    expect(result.mode).toBe('dry-run');
-    expect(result.deleted).toBe(0);
+    expect(result.mode).toBe('live');
     expect(result.candidates).toBe(1);
+    expect(result.deleted).toBe(1);
     expect(
       (
         db.prepare('SELECT id FROM retail_offers ORDER BY id').all() as {
           id: number;
         }[]
       ).map((row) => row.id),
-    ).toEqual([11, 12]);
+    ).toEqual([12]);
   });
 });
 

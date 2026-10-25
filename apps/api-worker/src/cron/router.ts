@@ -229,12 +229,15 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
   // Task 3.2 (change d1-read-cost-reduction, design D4) shares the same
   // nightly tick: retail_offers is append-only, so superseded rows past
   // the spec-pinned 30-day window are swept in bounded id-list batches.
-  // The registration passes no deps — the handler's report-only dry-run
-  // default stays in force; the live flip is a reviewed one-line change
-  // at this site (owner decision, task 5.3), never an env var.
+  // LIVE since 2026-10-25: the owner reviewed the production dry-run
+  // report (verification-5.3.md — 50,275 candidates independently
+  // re-verified via the window-CTE formulation; zero rows predate the
+  // earliest daily summary, so R2 log + price_history_summaries carry
+  // every deleted observation) and approved the one-line flip at this
+  // site. Still never an env var.
   add(RETAIL_OFFERS_RETENTION_CRON, {
     name: 'retail-offers-retention',
-    run: (env, log) => handleRetailOffersRetention(env, log),
+    run: (env, log) => handleRetailOffersRetention(env, log, { mode: 'live' }),
   });
   // Task 3.1 (change calendar-event-automation): the annual January tick
   // generates the year's two ALKO_PRICE_LIST EXPECTED rows through the
