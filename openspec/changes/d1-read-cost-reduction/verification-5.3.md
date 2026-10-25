@@ -162,3 +162,28 @@ projected spend profile.
 - Owner decisions pending this report: (1) retention live-mode flip (one line,
   at the registration site), (2) billing budget threshold confirmation,
   (3) 48 h read observation re-check on/after 2026-10-27.
+
+## LIVE FLIP (owner decision, 2026-10-25)
+
+After the owner's independent verification of the dry-run report (window-CTE
+re-measure matching the anti-join count exactly at 50,275; survivors 24,544;
+partition sums exact; `rows_older_than_any_summary = 0` — every candidate
+covered by BOTH the R2 observation log AND `price_history_summaries`), the
+one-line flip at the registration site was applied:
+
+- `router.ts`: `run: (env, log) => handleRetailOffersRetention(env, log, { mode: 'live' })`
+  with the decision recorded in the registration comment
+- router dispatch test re-pinned (live mode deletes the seeded candidate,
+  keeps the deterministic-latest): 26/26 pass, typecheck clean
+- Deploy run 40218208151 (same dispatch gate): **Deploy API Worker ✓** —
+  version `c6b6d94a-395f-4904-8545-3e815f49c8c5` (superseding `9208b7a8`),
+  triggers applied; job conclusion `failure` is solely the pre-existing
+  OpenNext/Next-15.5.24 frontend gate (unchanged, repo-wide)
+- Post-deploy smoke: `/api/v1/health` 200; `/health/ready` d1 up (139 ms) +
+  durableObjects up (335 ms); `/api/v1/products?limit=1` 403 ungated / 200
+  with `x-age-confirmed`
+
+First live tick: 2026-10-26T03:30:00Z — expect ~20,000 deletions (40 × 500),
+`info` log `Retail-offers retention: deleted …`; ~50,275-row backlog drains
+over ~3 nights, then the table stays bounded (30-day window + current rows).
+Rollback if ever needed: revert the one line, redeploy (dry-run default).
