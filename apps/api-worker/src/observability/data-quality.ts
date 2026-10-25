@@ -13,7 +13,10 @@
  * - transport offer rows per carrier (append-only table row counts,
  *   expected curated carriers included at 0);
  * - per-feed last-success age (newest offer observation per registry
- *   feed — the hourly producer's per-merchant success signal).
+ *   feed, read from the materialized
+ *   `merchant_reliability_aggregates.freshest_observed_at` — the
+ *   producer's per-merchant success signal, one concurrent tick stale
+ *   at worst; task 2.2, change d1-read-cost-reduction).
  *
  * Write shapes follow the freshness gauges exactly (metrics.ts): one
  * discrete `recordGauge` point per observation, index1 = gauge name,
@@ -333,21 +336,33 @@ export async function measureTransportRowsPerCarrier(
   return rowsByCarrier;
 }
 
-const FEED_LAST_SUCCESS_SQL = `SELECT m.merchant_id AS merchant_id, MAX(o.observed_at) AS newest_observed_at
+// WHY merchant_reliability_aggregates (task 2.2, change d1-read-cost-reduction,
+// design D3): the previous LEFT JOIN … MAX(retail_offers.observed_at) read the
+// whole 282k-row offer table per gauge tick to learn one instant per feed. The
+// six-hourly aggregates refresh materializes exactly that instant per merchant
+// as `freshest_observed_at` — the join below reads those ~15 rows instead, and
+// never touches retail_offers. WHY the one-tick lag is acceptable: the refresh
+// and this gauge pass run as concurrent cron handlers in independent
+// `waitUntil`s with no cross-handler ordering guarantee, so a merchant whose
+// offers just moved may report the prior tick's instant; the deployment-
+// observability spec pins that tolerance ("Gauge staleness tolerates one
+// concurrent tick") rather than alerting on it.
+const FEED_LAST_SUCCESS_SQL = `SELECT m.merchant_id AS merchant_id, a.freshest_observed_at AS newest_observed_at
 FROM merchant_registry AS m
-LEFT JOIN retail_offers AS o ON o.merchant = m.merchant_id
+LEFT JOIN merchant_reliability_aggregates AS a ON a.merchant = m.merchant_id
 WHERE m.feed_url <> ''
-GROUP BY m.merchant_id
 ORDER BY m.merchant_id ASC`;
 
 /**
  * Measure per-feed last success — the newest offer observation per
- * registry feed. Every successful ingestion stamps fresh `observedAt`
- * instants (mapper: `new Date()`), so the newest offer row per merchant
- * IS the last-success signal; a feed that has never published an offer
- * reports null (the +Inf sentinel at write time). Registry rows with an
- * empty feed URL are excluded — the producer skips those (adapter not
- * live), so they are not feeds whose success can go stale.
+ * registry feed, read from the materialized per-merchant aggregates
+ * (`freshest_observed_at`; see the SQL comment for why the raw
+ * `MAX(observed_at)` scan is gone). A feed whose aggregates row has not
+ * materialized yet (live feed, no current offers at the last refresh)
+ * reports null (the +Inf sentinel at write time) — the LEFT JOIN's NULL,
+ * same contract as when the instant came from the raw table. Registry
+ * rows with an empty feed URL are excluded — the producer skips those
+ * (adapter not live), so they are not feeds whose success can go stale.
  */
 export async function measureFeedLastSuccesses(
   db: D1DatabaseLike,

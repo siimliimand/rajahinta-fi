@@ -7,10 +7,15 @@
  *
  * ## Where the measured values come from (reuse, not re-derivation)
  *
- * - Stale price share: the SAME audited R2 scan set the time-series
- *   aggregation reads (watermark-driven partitions) through the SAME
- *   `stalePriceShareOf` computation the gauge emitter uses — the alert
- *   and the Analytics Engine dashboard value cannot diverge.
+ * - Stale price share: `SUM(stale_count)/SUM(offer_count)` over the
+ *   materialized `merchant_reliability_aggregates` (task 2.2, change
+ *   d1-read-cost-reduction) — the same per-merchant current-offer
+ *   aggregate the reliability embed and the gauges read, so the alert
+ *   no longer re-derives the share from the audited R2 scan per tick.
+ *   The refresh runs on the six-hourly tick while this handler stays on
+ *   the 30-minute one, and cron handlers execute concurrently, so the
+ *   figure may lag the ageing pass by one tick (deployment-observability
+ *   spec: "Gauge staleness tolerates one concurrent tick").
  * - Transport age: `D1TransportOfferWritePort.findNewestObservedAt()` —
  *   the exact read the transport-rate-refresh handler (task 4.3) feeds
  *   its gauge from — aged by the SAME `transportAgeSeconds` computation
@@ -61,19 +66,7 @@
  * @module FreshnessAlertCron
  */
 
-import { startOfIsoWeek } from '../../../../packages/data-platform/src/d1/summary-aggregation';
-import {
-  OBSERVATION_LOG_PREFIX,
-  observationKeysToScan,
-} from '../../../../packages/data-platform/src/d1/observation-log';
-import { D1AggregationWatermarkRepository } from '../../../../packages/data-platform/src/repositories/d1/aggregation-watermark.repository';
-import {
-  AGGREGATION_CRON,
-  WATERMARK_KEY,
-  readPartitions,
-  stalePriceShareOf,
-} from './time-series-aggregation';
-import { observationLogStore } from '../adapters/r2-observation-log.store';
+import { AGGREGATION_CRON } from './time-series-aggregation';
 import { D1TransportOfferWritePort } from '../adapters/d1-domain-ports';
 import {
   STALE_PRICE_SHARE_GAUGE,
@@ -407,7 +400,11 @@ export interface FreshnessAlertResult {
 
 /** Measurement + delivery seams (test overrides; defaults are the real ones). */
 export interface FreshnessAlertDeps {
-  /** Defaults to the watermark-driven audited R2 scan → stalePriceShareOf. */
+  /**
+   * Defaults to the materialized read — SUM(stale_count)/SUM(offer_count)
+   * over merchant_reliability_aggregates (see the SQL comment at
+   * STALE_SHARE_AGGREGATE_SQL for why the R2 recompute is gone).
+   */
   measureStaleShare?: () => Promise<{ stale: number; total: number; share: number }>;
   /** Defaults to D1TransportOfferWritePort.findNewestObservedAt (the refresh read). */
   findNewestObservedAt?: () => Promise<Date | null>;
@@ -496,19 +493,29 @@ export async function handleFreshnessAlert(
   const alertRecipient = env.FRESHNESS_ALERT_EMAIL_TO;
 
   // -- Measure (the same computations the 4.3 handlers/gauges use) --------
+  // WHY merchant_reliability_aggregates (task 2.2, change
+  // d1-read-cost-reduction, design D3): the invariant previously
+  // re-derived the share from the watermark-driven audited R2 scan every
+  // tick. The six-hourly refresh materializes the same figures per
+  // merchant (`stale_count`, and `offer_count` the four CASE arms sum
+  // to, CHECK-enforced), so one ~15-row read replaces the recompute.
+  // Concurrent cron handlers mean the figure can be one tick behind the
+  // 30-minute ageing pass (spec: "Gauge staleness tolerates one
+  // concurrent tick") — documented lag, not an alert condition. An empty
+  // table aggregates to 0/0 → share 0, keeping the renders-0 contract.
+  const STALE_SHARE_AGGREGATE_SQL = `
+    SELECT COALESCE(SUM(stale_count), 0) AS stale_count,
+           COALESCE(SUM(offer_count), 0) AS offer_count
+      FROM merchant_reliability_aggregates`;
   const measureStaleShare =
     deps.measureStaleShare ?? (async () => {
-      const store = observationLogStore(env);
-      const watermark = await new D1AggregationWatermarkRepository(
-        env.DB,
-      ).find(WATERMARK_KEY);
-      const keys = await store.listKeys(OBSERVATION_LOG_PREFIX);
-      const readFrom = watermark === null ? null : startOfIsoWeek(watermark);
-      const records = await readPartitions(
-        store,
-        observationKeysToScan(keys, readFrom),
-      );
-      return stalePriceShareOf(records);
+      const row = await env.DB.prepare(STALE_SHARE_AGGREGATE_SQL).first<{
+        stale_count: number;
+        offer_count: number;
+      }>();
+      const stale = row?.stale_count ?? 0;
+      const total = row?.offer_count ?? 0;
+      return { stale, total, share: total > 0 ? stale / total : 0 };
     });
   const findNewestObservedAt =
     deps.findNewestObservedAt ??

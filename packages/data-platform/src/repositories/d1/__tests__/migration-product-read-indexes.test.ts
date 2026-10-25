@@ -11,11 +11,11 @@
  *   - the Tier-2 compound match (FIND_BY_COMPOUND_SQL, same file)
  *     SEARCHes product_master_name_brand_container_volume_idx on all
  *     four key columns;
- *   - the bounded coverage gauge's window is servable through the
- *     covering retail_offers_observed_at_product_idx (forced-plan
- *     proof) — the verbatim statement's SEARCH pin is skipped on a
- *     reported planner gap (see the test body; staging D1 verified
- *     2026-10-25).
+ *   - the bounded coverage gauge's verbatim statement rides the covering
+ *     retail_offers_observed_at_product_idx: task 2.2 (change
+ *     d1-read-cost-reduction) added INDEXED BY to the BOUNDED variant
+ *     after the task-1.1 planner-gap finding, and the SEARCH pin below
+ *     proves the forced plan against the real engine.
  *
  * @module D1Migration0041Test
  */
@@ -35,9 +35,14 @@ const FIND_BY_COMPOUND_SQL = `
    WHERE name = ? AND brand = ? AND container_type = ? AND unit_volume = ?
    LIMIT 1`;
 
+// Verbatim of the module-private prepared statement in
+// time-series-aggregation.ts (task 2.2: INDEXED BY on the BOUNDED
+// variant). Kept literal so the plan below is the plan the consumer
+// actually runs; drift here fails loudly as a plan-shape change.
 const SUMMARY_COVERAGE_BOUNDED_SQL = `
   SELECT
     (SELECT COUNT(DISTINCT product_id) FROM retail_offers
+      INDEXED BY retail_offers_observed_at_product_idx
       WHERE observed_at >= ?) AS products_with_observations,
     (SELECT COUNT(DISTINCT product_id) FROM price_history_summaries
       WHERE granularity = 'daily' AND period_start >= ?) AS summarized_products`;
@@ -119,19 +124,14 @@ describe('migration 0041 — product/offer read indexes', () => {
     expect(forcedDetails).not.toMatch(/\bSCAN retail_offers\b/);
   });
 
-  // KNOWN GAP (task 1.1 blocker, reported): the verbatim unforced
-  // statement is NOT planned onto the new index — SQLite prefers
-  // SCAN ... USING INDEX retail_offers_product_merchant_id_idx
-  // because COUNT(DISTINCT product_id) over product_id-ordered rows
-  // avoids the DISTINCT temp b-tree, and the planner cannot estimate
-  // the unbounded observed_at range's selectivity. Verified identical
-  // on staging D1 (2026-10-25, EXPLAIN QUERY PLAN over 120,673
-  // offers) and local SQLite 3.53.4 at production volume. The design
-  // pins the pair's SQL ("keeps its SQL — the new index does the
-  // work"), so this SEARCH pin stays skipped until the lead amends the
-  // design (INDEXED BY, or the task 2.2 gauge rewrite reaching for the
-  // index); re-enable it then.
-  it.skip('the verbatim bounded coverage query SEARCHes the new index (blocked: planner picks product_id-leading scan)', () => {
+  // Task 1.1 reported a planner gap (unforced, the statement went to SCAN
+  // … USING retail_offers_product_merchant_id_idx because COUNT(DISTINCT
+  // product_id) over product_id-ordered rows avoids the DISTINCT temp
+  // b-tree; verified on staging D1 2026-10-25 and local SQLite 3.53.4).
+  // Task 2.2 resolved it in the statement itself — INDEXED BY on the
+  // always-ISO-week-bounded variant, making the read a ~one-week covering
+  // range scan — so the verbatim pin below is enabled and must stay green.
+  it('the verbatim bounded coverage query SEARCHes the covering index (INDEXED BY, task 2.2)', () => {
     const plan = db
       .prepare(`EXPLAIN QUERY PLAN ${SUMMARY_COVERAGE_BOUNDED_SQL}`)
       .all('2026-10-01T00:00:00.000Z', '2026-10-01') as {
