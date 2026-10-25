@@ -1,7 +1,10 @@
 /**
  * Cron dispatch routing tests (task 4.3) — right handler per cron pattern,
  * per-handler error isolation, and parity between the routing table and
- * the committed wrangler.jsonc triggers.
+ * the committed wrangler.jsonc triggers. The task-3.2 section pins the
+ * retail-offers retention wiring: the shared retention pattern routes it
+ * after the sweep and contact retention, still in the handler's default
+ * dry-run mode.
  *
  * @module CronRouterTest
  */
@@ -15,6 +18,11 @@ import {
   runCronHandlers,
 } from '../router';
 import { createLogger } from '../../logger';
+import {
+  RETAIL_OFFERS_RETENTION_CRON,
+  type RetailOffersRetentionResult,
+} from '../retail-offers-retention';
+import { openMigratedD1 } from '../../analytics/__tests__/fake-d1';
 import type { Env } from '../../env';
 
 function handlerNames(cron: string): string[] {
@@ -64,7 +72,11 @@ describe('cron routing table (task 4.3 — BullMQ repeat-schedule parity)', () =
 
   it('routes the daily review + retention patterns', () => {
     expect(handlerNames('0 2 * * *')).toEqual(['tax-dataset-review']);
-    expect(handlerNames('30 3 * * *')).toEqual(['retention-sweep', 'contact-retention']);
+    expect(handlerNames('30 3 * * *')).toEqual([
+      'retention-sweep',
+      'contact-retention',
+      'retail-offers-retention',
+    ]);
   });
 
   it('routes the monthly curated-dataset refresh and the ferry-price refresh (task 2.2)', () => {
@@ -88,6 +100,67 @@ describe('cron routing table (task 4.3 — BullMQ repeat-schedule parity)', () =
       expect(handlerNames(cron).length).toBeGreaterThan(0);
     }
     expect(routingPatterns()).toEqual([...new Set(crons)].sort());
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Task 3.2 (change d1-read-cost-reduction) — retail-offers retention wiring
+// -----------------------------------------------------------------------------
+
+describe('retail-offers-retention registration (task 3.2, change d1-read-cost-reduction)', () => {
+  it('routes the shared retention pattern to the new handler alongside retention-sweep and contact-retention', () => {
+    expect(RETAIL_OFFERS_RETENTION_CRON).toBe('30 3 * * *');
+    expect(handlerNames(RETAIL_OFFERS_RETENTION_CRON)).toEqual([
+      'retention-sweep',
+      'contact-retention',
+      'retail-offers-retention',
+    ]);
+  });
+
+  it('registers the handler with no deps override — the default dry-run mode survives dispatch', async () => {
+    const { db, d1 } = openMigratedD1();
+    await db
+      .prepare(
+        `INSERT INTO product_master (id, name, manufacturer, brand, category,
+            alcohol_by_volume, unit_volume, container_type, regulatory_classification)
+         VALUES (?, ?, 'Brewery', 'Brand', 'beer', 0.05, 0.33, 'can', 'beer')`,
+      )
+      .run(1, 'Product 1');
+    const insertOffer = db.prepare(
+      `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+          currency, observed_at, reliability_status)
+       VALUES (?, ?, 'DE', ?, 250, 'EUR', ?, 'ESTIMATED')`,
+    );
+    // A superseded row far past the 30-day window plus its newer same-pair
+    // latest — exactly one deletable candidate for the dry-run to report.
+    await insertOffer.run(11, 'beverage-de', 1, '2020-01-01T00:00:00.000Z');
+    await insertOffer.run(12, 'beverage-de', 1, '2026-10-20T00:00:00.000Z');
+
+    const handler = handlersForCron(RETAIL_OFFERS_RETENTION_CRON).find(
+      (candidate) => candidate.name === 'retail-offers-retention',
+    );
+    if (!handler) {
+      throw new Error(
+        'retail-offers-retention is not registered on the retention pattern',
+      );
+    }
+
+    // The routing table's own run — exactly what the nightly tick calls.
+    const result = (await handler.run(
+      { DB: d1 } as unknown as Env,
+      createLogger('error'),
+    )) as RetailOffersRetentionResult;
+
+    expect(result.mode).toBe('dry-run');
+    expect(result.deleted).toBe(0);
+    expect(result.candidates).toBe(1);
+    expect(
+      (
+        db.prepare('SELECT id FROM retail_offers ORDER BY id').all() as {
+          id: number;
+        }[]
+      ).map((row) => row.id),
+    ).toEqual([11, 12]);
   });
 });
 
