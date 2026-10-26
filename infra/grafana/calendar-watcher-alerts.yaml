@@ -1,0 +1,204 @@
+# Rajahinta calendar-event-automation watcher watch (2026-10-26 health
+# review of the archived 2026-10-16 change) — Grafana-managed alert
+# rules in provisioning format (apiVersion: 1), importable into Grafana
+# Cloud. Companion to d1-spend-alerts.yaml (same rule shape, different
+# data plane: these query the PRODUCTION D1 database directly instead
+# of the AE SQL dataset).
+#
+# WHY THESE TWO RULES — the watcher (daily `0 4 * * *` UTC cron,
+# calendar-event-automation task 3.3) emits no AE metric, so its tick
+# is not observable from the existing metrics plane. The only
+# machine-readable trace of a tick is the calendar_event_candidates
+# table itself (detections land within seconds of 04:00:00 UTC —
+# observed 04:00:56–58 across 2026-10-17/23/24). These rules watch
+# that table. The PROPER liveness signal (a per-tick AE blob metric,
+# `noDataState: Alerting`) is a code change in the cron handler and is
+# tracked as a follow-up with the platform engineer; until then this
+# file ships the two D1-observable signals that need no deploy.
+#
+# RULE 1 — queue review staleness (oldest PENDING candidate age).
+# The watcher is fail-open and news-shaped: it deliberately over-
+# collects (37/37 detections in the first 10 days were store moves,
+# sales stats, promos and non-excise tax news — 0 calendar-worthy),
+# so the review queue is the filter and a stale queue is the system's
+# real failure mode: relevant announcements age out of actionability
+# while buried under noise. THRESHOLD — oldest detection > 7 days:
+# vero.fi published at least one calendar-relevant-class news item
+# every ≤ 7 days across 2026-09..10 (observed max quiet gap 7 days),
+# so a week-old unreviewed detection means triage lag, not a quiet
+# feed. First 10 days of live operation breached this by construction
+# (9-day-old queue, zero reviews) — the rule is designed to page on
+# exactly that state. `for: 3h` = 3 evaluations at the group's 1h
+# interval; the signal is day-scale, one tick of lag is meaningless.
+#
+# RULE 2 — insert silence (hours since the last detection landed).
+# Proxy liveness: a dead watcher (and only a dead watcher... or a
+# genuinely quiet fortnight) stops inserting. THRESHOLD — > 336 h
+# (14 d) = 2× the worst quiet gap observed across BOTH feeds since
+# the watcher went live. KNOWN FALSE-POSITIVE MODE, accepted: two
+# silent feed weeks page once and turn out to be nothing — a warning,
+# not a page-the-founder signal. The empty-table edge (watcher dead
+# before its first insert) is NOT covered: an empty result renders as
+# NoData and noDataState is deliberately NoData here, same reasoning
+# as d1-spend-alerts.yaml — an unanswerable query is a transport/
+# permission problem, and unlike the cadence gauges there is no
+# guaranteed writer cadence to go silent.
+#
+# DATASOURCE — both rules need a JSON/Infinity data source POSTing to
+# the D1 query API. The d1-spend AE data source token carries only
+# Analytics read; Cloudflare's D1 `/query` endpoint requires an
+# edit-scoped D1 token, so create a DEDICATED token (D1 edit scope,
+# account-wide) and store it in the data source's secureJsonData —
+# never in this file. The database UUID in the URL is an identifier,
+# not a credential (production: f8f67277-…; swap in
+# da49e685-… to rehearse against staging).
+#
+# IMPORT (one-time): replace RAJAHINTA_CF_D1_DATASOURCE_UID with that
+# data source's uid and CF_ACCOUNT_ID in the URL with the account id
+# (same edit ritual as d1-spend-alerts.yaml). Verify the rendered
+# response once in the rule's query inspector: the D1 REST envelope is
+# {"result":[{"results":[…]}],…} — one nesting level deeper than the
+# GraphQL envelope d1-spend parses; the Infinity backend JSON parser
+# auto-flattens arrays of objects, but confirm the single-row frame
+# (columns oldest_pending_age_days / hours_since_last_insert) before
+# saving. execErrState stays Error like every rule in this directory.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: rajahinta-calendar-watcher
+    folder: Rajahinta
+    interval: 1h
+    rules:
+      - title: RajahintaCalendarQueueReviewStale
+        condition: C
+        for: 3h
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: >-
+            The calendar candidate review queue has an unreviewed detection
+            older than 7 days — operator triage is lagging the watcher. The
+            watcher over-collects by design (first 10 live days: 37
+            detections, 0 calendar-worthy), so the human accept/reject pass
+            is the only filter between noise and the public calendar; a
+            stale queue means a genuinely relevant announcement would sit
+            unreviewed. Reject-retains-for-dedup makes late review strictly
+            worse than prompt review.
+          runbook: >-
+            1) Open the ops console calendar-candidates queue (GET
+            /ops/console/calendar-candidates behind the ops bearer).
+            2) Triage oldest-first: reject the noise (terminal, retained
+            for URL dedup), accept only items that name an excise rate,
+            tax-table, or price-list change with an official source —
+            acceptance creates a public calendar event and is audited.
+            3) Reference pass: docs/calendar-candidate-triage-2026-10-26.md
+            triaged the initial 37-item backlog item by item.
+            4) If the queue is routinely breaching, raise the cadence of
+            review or add a watcher-side pre-filter (platform engineer).
+        labels:
+          severity: warning
+          team: rajahinta
+        data:
+          - refId: A
+            datasourceUid: RAJAHINTA_CF_D1_DATASOURCE_UID
+            model:
+              datasource:
+                type: yesoreyeram-infinity-datasource
+                uid: RAJAHINTA_CF_D1_DATASOURCE_UID
+              data: >-
+                {"sql":"SELECT CAST(julianday('now') - julianday(MIN(created_at)) AS INTEGER) AS oldest_pending_age_days FROM calendar_event_candidates WHERE status = 'PENDING'"}
+              format: table
+              method: POST
+              parser: backend
+              refId: A
+              source: response
+              type: json
+              url: https://api.cloudflare.com/client/v4/accounts/CF_ACCOUNT_ID/d1/database/f8f67277-5046-46fc-9144-4342ab7af003/query
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [7]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              type: threshold
+      - title: RajahintaCalendarWatcherInsertSilence
+        condition: C
+        for: 6h
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: >-
+            No calendar candidate has been inserted for over 14 days — the
+            daily source watcher (vero.fi news RSS + Alko/STT releases,
+            04:00 UTC tick) may be dead, or both feeds have gone genuinely
+            quiet (worst observed gap since go-live: 7 days). Either way it
+            warrants one manual look: the watcher fails OPEN, so its death
+            never surfaces as an error anywhere.
+          runbook: >-
+            1) Check the live feeds manually (https://www.vero.fi/api/rss/news/fi
+            and https://www.sttinfo.fi/rss/releases/latest?publisherId=1631 —
+            the URLs verified in the archived change's verified-feeds.md).
+            Quiet feeds ⇒ false positive, no action.
+            2) Feeds not quiet ⇒ inspect the last scheduled invocation
+            (Workers Logs: "Calendar source watcher complete:" summary line
+            per tick; the fail-open wrapper logs failures and returns null).
+            3) Cross-check crons are still registered:
+            GET /accounts/{id}/workers/scripts/rajahinta-api-production/schedules
+            must list `0 4 * * *` (watcher) and `0 0 1 1 *` (January skeleton).
+            4) Permanent fix tracked separately: a per-tick AE metric would
+            make this rule a noDataState: Alerting silence check instead of
+            a data-derived proxy.
+        labels:
+          severity: warning
+          team: rajahinta
+        data:
+          - refId: A
+            datasourceUid: RAJAHINTA_CF_D1_DATASOURCE_UID
+            model:
+              datasource:
+                type: yesoreyeram-infinity-datasource
+                uid: RAJAHINTA_CF_D1_DATASOURCE_UID
+              data: >-
+                {"sql":"SELECT CAST((julianday('now') - julianday(MAX(created_at))) * 24 AS INTEGER) AS hours_since_last_insert FROM calendar_event_candidates"}
+              format: table
+              method: POST
+              parser: backend
+              refId: A
+              source: response
+              type: json
+              url: https://api.cloudflare.com/client/v4/accounts/CF_ACCOUNT_ID/d1/database/f8f67277-5046-46fc-9144-4342ab7af003/query
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [336]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              type: threshold
