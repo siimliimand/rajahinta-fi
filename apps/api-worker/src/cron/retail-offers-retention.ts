@@ -86,6 +86,14 @@ export const RETENTION_WINDOW_DAYS = 30;
 export const RETENTION_BATCH_SIZE = 500;
 
 /**
+ * Ids per DELETE statement — D1 caps bound SQL variables at 100, so the
+ * 500-row batch deletes in 90-id chunks (the 2026-10-26 first live tick
+ * failed with `too many SQL variables`; the node:sqlite test harness does
+ * not enforce the cap, which is why the tests missed it).
+ */
+export const RETENTION_DELETE_CHUNK = 90;
+
+/**
  * Batch cap per invocation — 40 × 500 = 20k rows per night bounds the
  * sweep's D1 cost while draining even the initial 282k-row backlog in
  * about two weeks; the remainder waits for the next nightly run.
@@ -258,6 +266,8 @@ export interface RetailOffersRetentionDeps {
   batchSize?: number;
   /** Defaults to {@link RETENTION_MAX_BATCHES}. */
   maxBatches?: number;
+  /** Defaults to {@link RETENTION_DELETE_CHUNK}. */
+  deleteChunk?: number;
   /** Defaults to the real audit; tests force failures through this. */
   provenance?: LandedCostProvenanceContractResult;
 }
@@ -280,6 +290,7 @@ export async function handleRetailOffersRetention(
   const retentionDays = deps.retentionDays ?? RETENTION_WINDOW_DAYS;
   const batchSize = deps.batchSize ?? RETENTION_BATCH_SIZE;
   const maxBatches = deps.maxBatches ?? RETENTION_MAX_BATCHES;
+  const deleteChunk = deps.deleteChunk ?? RETENTION_DELETE_CHUNK;
   const cutoffIso = new Date(
     now.getTime() - retentionDays * MS_PER_DAY,
   ).toISOString();
@@ -308,12 +319,16 @@ export async function handleRetailOffersRetention(
     candidates += ids.length;
     cursor = ids[ids.length - 1];
     if (mode === 'live') {
-      const placeholders = ids.map(() => '?').join(', ');
-      const result = await db
-        .prepare(`DELETE FROM retail_offers WHERE id IN (${placeholders})`)
-        .bind(...ids)
-        .run();
-      deleted += Number(result.meta.changes ?? 0);
+      // D1 caps bound variables at 100 — delete the batch in ≤90-id chunks.
+      for (let i = 0; i < ids.length; i += deleteChunk) {
+        const chunk = ids.slice(i, i + deleteChunk);
+        const placeholders = chunk.map(() => '?').join(', ');
+        const result = await db
+          .prepare(`DELETE FROM retail_offers WHERE id IN (${placeholders})`)
+          .bind(...chunk)
+          .run();
+        deleted += Number(result.meta.changes ?? 0);
+      }
     }
     batchesRun++;
     // A short selection means nothing deletable is left past the cursor.

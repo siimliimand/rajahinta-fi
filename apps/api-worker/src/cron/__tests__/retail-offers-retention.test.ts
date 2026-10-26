@@ -306,6 +306,40 @@ describe('handleRetailOffersRetention — batch bounds', () => {
     expect(offerIds(db)).toHaveLength(14 - 6);
   });
 
+  it('chunks live deletes to ≤ 90 placeholders — the D1 bound-variable cap (2026-10-26 first-tick regression)', async () => {
+    const { db, d1 } = createDb();
+    // 95 pairs: 95 deletable superseded rows past the window, one selected
+    // batch of 200 — a single-statement DELETE would need 95 bind
+    // variables, over D1's 100-variable cap (the node:sqlite harness does
+    // not enforce it, so the chunking itself must be pinned here).
+    for (let i = 1; i <= 95; i++) {
+      await seedProduct(db, i);
+      await seedOffer(db, i * 10, 'beverage-de', i, '2026-09-01T00:00:00.000Z');
+      await seedOffer(db, i * 10 + 1, 'beverage-de', i, '2026-10-20T00:00:00.000Z');
+    }
+    const recorder = recordingD1(d1);
+
+    const result = await handleRetailOffersRetention(envWith(d1), LOG, {
+      db: recorder.d1,
+      now: NOW,
+      mode: 'live',
+      batchSize: 200,
+      maxBatches: 1,
+    });
+
+    expect(result.mode).toBe('live');
+    expect(result.deleted).toBe(95);
+    expect(offerIds(db)).toHaveLength(95);
+
+    const deletes = recorder
+      .statements()
+      .filter((sql) => sql.startsWith('DELETE FROM retail_offers'));
+    expect(deletes.length).toBeGreaterThan(1);
+    for (const sql of deletes) {
+      expect((sql.match(/\?/g) ?? []).length).toBeLessThanOrEqual(90);
+    }
+  });
+
   it('drains the capped remainder on the next run', async () => {
     const { db, d1 } = createDb();
     await seedBacklog(db);
