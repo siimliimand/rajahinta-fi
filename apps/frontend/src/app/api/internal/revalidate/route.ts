@@ -107,7 +107,10 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   for (const tag of tags) {
-    revalidateTag(tag);
+    // Next 16: revalidateTag requires a cache profile; 'max' marks every
+    // cached entry for the tag stale immediately — the on-demand
+    // freshness this internal endpoint has always promised.
+    revalidateTag(tag, 'max');
   }
 
   return Response.json({ revalidated: tags, revalidatedAt: new Date().toISOString() });

@@ -13,7 +13,7 @@
     "deploy:dev": "opennextjs-cloudflare build && opennextjs-cloudflare deploy --env dev",
     "deploy:staging": "opennextjs-cloudflare build && opennextjs-cloudflare deploy --env staging",
     "deploy:production": "opennextjs-cloudflare build && opennextjs-cloudflare deploy --env production",
-    "lint": "next lint",
+    "lint": "eslint .",
     "lint:content": "tsx scripts/lint-content-policy.ts",
     "test": "vitest run",
     "test:content-policy": "vitest run src/__tests__/content-policy-lint.test.ts",
@@ -23,13 +23,13 @@
   "dependencies": {
     "@grafana/faro-web-sdk": "^2.12.1",
     "@grafana/faro-web-tracing": "^2.12.1",
-    "next": "^15.5.24",
+    "next": "^16.4.3",
     "next-intl": "^4.14.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
-    "@opennextjs/cloudflare": "^1.20.4",
+    "@opennextjs/cloudflare": "^1.20.13",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.4",
@@ -38,13 +38,13 @@
     "@types/react-dom": "^19.2.0",
     "autoprefixer": "^10.4.0",
     "eslint": "^9.0.0",
-    "eslint-config-next": "^15.5.24",
+    "eslint-config-next": "^16.4.3",
     "jsdom": "^30.0.1",
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^3.2.0",
-    "wrangler": "^4.14.0"
+    "wrangler": "^4.148.0"
   }
 }
