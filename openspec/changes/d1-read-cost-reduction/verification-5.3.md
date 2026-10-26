@@ -187,3 +187,31 @@ First live tick: 2026-10-26T03:30:00Z — expect ~20,000 deletions (40 × 500),
 `info` log `Retail-offers retention: deleted …`; ~50,275-row backlog drains
 over ~3 nights, then the table stays bounded (30-day window + current rows).
 Rollback if ever needed: revert the one line, redeploy (dry-run default).
+
+## INCIDENT + FIX: first live tick failed (2026-10-26 03:30 UTC)
+
+Workers Logs: `Cron handler "retail-offers-retention" failed` —
+`D1_ERROR: too many SQL variables: SQLITE_ERROR`. The live DELETE bound all
+500 batch ids as placeholders; D1 caps bound variables at 100. Dry-run never
+executed a DELETE, which is why staging dry-runs and the D1 suite (node:sqlite
+harness does not enforce the variable cap) passed. Router error isolation
+contained the failure; zero data was affected (nothing deleted, nothing
+corrupted — verified: table state grew only via ingestion).
+
+Fix (commit "fix(retention): chunk live DELETEs to 90 ids"): live batches
+delete in ≤90-id chunks (constant RETENTION_DELETE_CHUNK = 90); regression
+test pins that no DELETE statement exceeds 90 placeholders even when a
+selected batch exceeds the cap (95-pair fixture, would fail on the old code).
+Tests 27/27, typecheck clean. Redeployed run 40288353533 — API Worker version
+`2fd62096-4749-4c9f-b851-9365d84a8b9e`, health smoke green.
+
+Next live tick 2026-10-27T03:30Z: expect ~20,000 deletions, backlog drains
+over ~3 nights.
+
+## Neighboring defects found while reading the same tick's logs (NOT this change)
+
+1. `retail-offers-retention` sibling `retention-sweep` (calculation-record
+   sweep) fails EVERY night: `process is not defined` — a Node global in
+   worker code; the sweep has never deleted anything in production.
+2. `contact-retention` carries the same latent 500-variable DELETE pattern —
+   masked only because it currently deletes 0 rows.
