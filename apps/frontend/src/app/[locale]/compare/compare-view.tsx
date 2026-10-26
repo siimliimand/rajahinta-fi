@@ -189,13 +189,18 @@ export default function CompareView() {
         // failed read leaves the existing empty state standing.
       })
       .finally(() => {
-        if (!cancelled) setPrefilling(false);
+        // The loading flag tracks the CHAIN, so it clears unconditionally:
+        // `cancelled` guards the content writes only. Under StrictMode's
+        // double-invoke (and any hydration-recovery remount) the ref guard
+        // makes this the only chain while `cancelled` is already true —
+        // a conditional clear here left the grid skeletons forever and
+        // broke the compare e2e journeys under Next 16's dev runtime.
+        setPrefilling(false);
       });
     return () => {
       cancelled = true;
     };
   }, []);
-
   // Guard against duplicate submissions
   const searchInFlight = useRef(false);
 
