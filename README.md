@@ -2,7 +2,7 @@
 
 Rajahinta.fi is a Finnish cross-border beverage price index and landed-cost intelligence platform, EUR-only by design. It estimates shipping to Finland, adds Finnish alcohol excise duty and beverage-container duty, and shows the total estimated cost of importing a product bought abroad; every calculation can be compared against the Alko domestic reference price as a display-only benchmark. Prices come from five live feeds — the Alko domestic reference assortment and four retailer catalogs on the WooCommerce Store API (`alks`, `longero`, `kippis`, `mydrink`; each seller's market comes from its merchant registry row) — ingested through a per-merchant permission gate (retailer feeds for the further EUR markets are a future direction). Every number carries a reliability status, every result carries a structural disclaimer, and no merchant can pay for position.
 
-Beyond the calculator, the platform maintains sourced intelligence surfaces: deterministic cross-border savings listings, price-history series, €/g ethanol unit prices, an excursion and trip calculator, a hypothetical excise what-if simulator, and a sourced tax-change calendar (`/veromuutokset`, en `/tax-changes`) that shows when alcohol prices change over the year — confirmed changes with exact dates and official sources, annual rhythms labeled as rhythm, never as forecasts.
+Beyond the calculator, the platform offers a camera-based label-scan product lookup (`/scan`) that reads a bottle's label and prices it against the catalog, an event calculator with a group-order ledger for shared hauls, and sourced intelligence surfaces: deterministic cross-border savings listings, price-history series, factual price-context lines, €/g ethanol unit prices, an excursion and trip calculator, a hypothetical excise what-if simulator, and a sourced tax-change calendar (`/veromuutokset`, en `/tax-changes`) that shows when alcohol prices change over the year — confirmed changes with exact dates and official sources, annual rhythms labeled as rhythm, never as forecasts.
 
 The service is a calculator, not a shop: there is no checkout, no payment collection for alcohol, and no order management. The only commercial transaction the architecture allows is a software subscription.
 
@@ -147,10 +147,14 @@ All routes are versioned under `/api/v1`. Guards vary per route (age gate, rate 
 | `/products` | GET | Catalog and free-text search (ranked `q`, category filter, server-side sort; savings embeds on covered rows) |
 | `/products/:id` | GET | Product detail with offers, merchant warnings, evidence-backed dupe panel |
 | `/products/:id/price-history` | GET | 30/90/365-day price and landed-cost series |
+| `/products/:id/price-context` | GET | Factual trailing-window price context (facts only, no advice) |
+| `/products/scan-label` | POST | Label-photo product lookup: vision-model extraction + catalog candidate funnel; age gate + anonymous per-IP quota, photos processed in memory and never stored |
 | `/calculator` | POST | Single-product landed-cost calculation (idempotency-key aware) |
 | `/calculator/result/:recordId` | GET | Fetch a persisted result |
 | `/basket/optimize` | POST | Multi-store basket optimization |
 | `/trip/fill`, `/event-calc` | POST | Allowance-fill planner; excursion calculator |
+| `/trip-feasibility` | POST | Trip feasibility check against traveller-allowance datasets |
+| `/group-orders`, `/group-orders/:shareToken/join·items·ledger` | POST | Group-order ledger: estimate-derived prefill, token-scoped participant routes |
 | `/what-if/excise` | POST | Hypothetical excise substitution — pure, zero persistence, structural disclaimer |
 | `/unitprice/ranking` | GET | Public per-category €/g ranking — deterministic, reliability per row |
 | `/savings/top`, `/savings/overview`, `/savings/best-per-merchant` | GET | Cross-border savings surfaces (negative-gap-only eligibility, as-of + coverage, deterministic order) |
