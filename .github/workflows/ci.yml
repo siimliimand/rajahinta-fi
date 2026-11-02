@@ -9,6 +9,14 @@
 # suite, the OpenNext frontend worker build + compile check, and per-worker
 # `wrangler deploy --dry-run` validation so a broken wrangler.jsonc fails
 # PRs before any deploy workflow can. Independent jobs run in parallel.
+#
+# OpenNext adapter freshness (fix-opennext-adapter-cache-regression): when a
+# PR changes the frontend `next` dependency specifier, the
+# @opennextjs/cloudflare and @opennextjs/aws versions resolved in
+# pnpm-lock.yaml must be at npm latest — a next bump on a stale adapter pair
+# is the adapter cache regression class this check guards against. The job
+# fails with a pointer to the adapter release notes; it exits trivially when
+# `next` is untouched or the event is not a pull_request.
 # =============================================================================
 
 name: CI
@@ -85,6 +93,88 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm run lint:content
+
+  # --------------------------------------------------------------------------
+  # Adapter freshness — when a PR bumps the frontend `next` specifier, the
+  # @opennextjs/cloudflare and @opennextjs/aws versions pinned in
+  # pnpm-lock.yaml must be at npm latest. The adapter's build-cache contract
+  # moves with next, so a next bump on a stale adapter pair is exactly the
+  # cache-regression failure class (see the
+  # fix-opennext-adapter-cache-regression change); only the newest pair is
+  # guaranteed compatible with the new runtime. Resolved versions are read
+  # straight from the lockfile (no install) and compared against
+  # `npm view <pkg> version`; auth-free registry access suffices. Exits
+  # trivially when `next` is untouched or the event is not a pull_request.
+  # Fast — runs in parallel with lint/build.
+  # --------------------------------------------------------------------------
+  adapter-freshness:
+    name: Adapter freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the three-dot diff against the PR base can find
+          # the merge base.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: OpenNext adapter freshness after next bump
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref || 'master' }}
+        run: |
+          set -euo pipefail
+
+          # Push builds (master / feature/*) have no PR base to diff against.
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            echo "Not a pull_request event — adapter freshness check skipped."
+            exit 0
+          fi
+
+          echo "Diffing apps/frontend/package.json against origin/${BASE_REF} (merge base)."
+          next_change="$(git diff "origin/${BASE_REF}...HEAD" -- apps/frontend/package.json \
+            | grep -E '^[+-][[:space:]]*"next":' || true)"
+          if [[ -z "$next_change" ]]; then
+            echo "Frontend \`next\` specifier unchanged — adapter freshness check passed trivially."
+            exit 0
+          fi
+          echo "Frontend \`next\` specifier changed in this PR:"
+          echo "$next_change"
+
+          # Resolved adapter versions from the lockfile's packages: section
+          # (2-space-indent keys carry the bare resolved version; snapshot
+          # entries carry peer-suffix parentheses and do not match).
+          resolved_cf="$(grep -oE "^  '@opennextjs/cloudflare@[0-9]+\.[0-9]+\.[0-9]+':" pnpm-lock.yaml \
+            | head -n1 | sed -E "s/^  '@opennextjs\/cloudflare@([^']+)':/\1/")"
+          resolved_aws="$(grep -oE "^  '@opennextjs/aws@[0-9]+\.[0-9]+\.[0-9]+':" pnpm-lock.yaml \
+            | head -n1 | sed -E "s/^  '@opennextjs\/aws@([^']+)':/\1/")"
+          if [[ -z "$resolved_cf" || -z "$resolved_aws" ]]; then
+            echo "::error::Could not resolve @opennextjs/cloudflare / @opennextjs/aws versions from pnpm-lock.yaml."
+            exit 1
+          fi
+
+          latest_cf="$(npm view @opennextjs/cloudflare version)"
+          latest_aws="$(npm view @opennextjs/aws version)"
+          echo "Resolved @opennextjs/cloudflare: $resolved_cf  (npm latest: $latest_cf)"
+          echo "Resolved @opennextjs/aws:        $resolved_aws  (npm latest: $latest_aws)"
+          echo "Adapter pair expected by the resolved cloudflare adapter:"
+          npm view "@opennextjs/cloudflare@$resolved_cf" dependencies || true
+
+          stale=0
+          lowest="$(printf '%s\n' "$resolved_cf" "$latest_cf" | sort -V | head -n1)"
+          if [[ "$lowest" != "$latest_cf" ]]; then
+            echo "::error::@opennextjs/cloudflare $resolved_cf is behind latest $latest_cf while this PR bumps \`next\`. Update the adapter before merging — a stale adapter's OpenNext build cache breaks on the new next runtime. Release notes: https://github.com/opennextjs/opennextjs-cloudflare/releases"
+            stale=1
+          fi
+          lowest="$(printf '%s\n' "$resolved_aws" "$latest_aws" | sort -V | head -n1)"
+          if [[ "$lowest" != "$latest_aws" ]]; then
+            echo "::error::@opennextjs/aws $resolved_aws is behind latest $latest_aws while this PR bumps \`next\`. Update the adapter pair before merging. Release notes: https://github.com/opennextjs/opennextjs-aws/releases"
+            stale=1
+          fi
+          exit "$stale"
 
   # --------------------------------------------------------------------------
   # Build — includes typecheck (tsc during compilation) plus .d.ts generation
@@ -527,6 +617,7 @@ jobs:
     needs:
       - lint
       - content-policy
+      - adapter-freshness
       - build
       - unit-tests
       - golden-dataset
@@ -545,6 +636,7 @@ jobs:
         run: |
           echo "lint: ${{ needs.lint.result }}"
           echo "content-policy: ${{ needs.content-policy.result }}"
+          echo "adapter-freshness: ${{ needs.adapter-freshness.result }}"
           echo "build: ${{ needs.build.result }}"
           echo "unit-tests: ${{ needs.unit-tests.result }}"
           echo "golden-dataset: ${{ needs.golden-dataset.result }}"
@@ -559,6 +651,7 @@ jobs:
 
           if [ "${{ needs.lint.result }}" = "failure" ] \
             || [ "${{ needs.content-policy.result }}" = "failure" ] \
+            || [ "${{ needs.adapter-freshness.result }}" = "failure" ] \
             || [ "${{ needs.build.result }}" = "failure" ] \
             || [ "${{ needs.unit-tests.result }}" = "failure" ] \
             || [ "${{ needs.golden-dataset.result }}" = "failure" ] \
