@@ -120,3 +120,29 @@ trend is claimed today:
 Re-run pointers: CPU/volume via GraphQL `workersInvocationsAdaptive` (see §4
 query shape) and `workersInvocationsByOwnerAndScriptGroups`; headers via two
 spaced `curl -sD - https://rajahinta.fi/tietoja`; staleness via the §1 table.
+
+## Addendum — 2026-11-02 trend check (48 h window matured, run by agent)
+
+GraphQL `workersInvocationsAdaptive`, daily, Oct 22 → Nov 2 (p50-weighted
+ms/req per day; cpuTimeP50 µs × requests):
+
+| Era | Days | est. CPU/day | w-p50 ms/req | peak p99 |
+|---|---|---|---|---|
+| Pre-regression (ISR era) | Oct 22–25 | 1.1–3.0M ms | 29–31 ms | 780–930 ms |
+| Regression (Next 16, no ISR) | Oct 26–30 | 1.3–1.8M ms | 60–117 ms | 950–1127 ms |
+| **Post-fix** | Oct 31–Nov 2 | **1.0–1.2M ms** | 91–114 ms | 770–845 ms |
+
+- **ISR HIT re-verified live 2026-11-02** (`/` STALE→HIT; `/tuotteet/1532`
+  MISS→HIT) — the fix remains effective days after deploy.
+- Account CPU share back in the pre-regression band: 76–82% post-fix vs
+  74–84% pre-regression (frontend is inherently the dominant worker here).
+- Per-invocation w-p50 did NOT return to the 29–31 ms band, and this is a
+  traffic-population effect, not a residual defect: ISR hits never invoke the
+  Worker, so the remaining ~10K/day population is dominated by the by-design
+  D5 dynamic `searchParams` routes and ISR misses. The pre-regression low p50
+  rode a 94K/day crawler wave composed mostly of cheap ISR product-page hits.
+  Total CPU/day is the metric that moved (−30–40% vs the regression era,
+  below every regression-era day).
+- Residual follow-up (same as the deferred D5 item): the dynamic-route render
+  cost is the design's own, addressable only by the deferred client-island
+  work — not by this adapter fix.
