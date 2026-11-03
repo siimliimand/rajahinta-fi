@@ -96,7 +96,17 @@ export async function serverRequest<T>(path: string, init?: RequestInit): Promis
       const res = await apiWorker.fetch(
         new Request(new URL(path, BINDING_ROUTE_BASE), requestInit),
       );
-      return translateResponse<T>(res);
+      // A 503 from the binding in a non-production runtime is the dev
+      // platform proxy answering for a service that has no local Worker
+      // behind it (the e2e/dev stacks run the legacy/local backend on the
+      // URL path instead). It means "binding unusable", so fall through to
+      // the plain-URL request rather than failing the read. Production has
+      // the real API Worker behind the binding and keeps 503 propagation.
+      const unusableDevBinding =
+        res.status === 503 && process.env.NODE_ENV !== 'production';
+      if (!unusableDevBinding) {
+        return translateResponse<T>(res);
+      }
     }
   } catch {
     // No Cloudflare context in this runtime (next dev / next build /

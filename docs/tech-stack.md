@@ -19,7 +19,7 @@
 | Object storage | Cloudflare R2 | — | Append-only price-observation log (JSONL by date), rate snapshots, OpenNext ISR cache; EU jurisdiction |
 | Request-scoped state | Durable Objects | — | Strongly consistent rate limiting, idempotency, click counters (SQLite-backed storage + alarms) |
 | ORM | Drizzle | 0.38+ | Type-safe, transparent SQL generation, no hidden N+1 queries; pg driver (legacy suites) + D1 driver |
-| Frontend framework | Next.js (App Router) | 15.5 | SSR for public pages, server components for calculation results, client components for dashboards; deployed as a Worker via OpenNext |
+| Frontend framework | Next.js (App Router) | 16.4 | SSR for public pages, server components for calculation results, client components for dashboards; deployed as a Worker via OpenNext |
 | Frontend styling | Tailwind CSS | 3.4+ | Utility-first, small bundle, consistent design system |
 | Job queue | Cloudflare Queues + Workflows | — | Durable queue with DLQ + per-step-retry Workflow for ingestion; Cron Triggers for schedules |
 | Background schedules | Cron Triggers | — | 7 UTC patterns dispatched in one Worker (ingestion, refresh, reviews, aggregation, retention, freshness alert) |
@@ -114,7 +114,7 @@ Go offers raw performance and simpler concurrency, but NestJS on Node.js provide
 | PostgreSQL | 16.0 | — | Legacy test harness only (docker-compose pg suites) |
 | TimescaleDB | 2.16.0 | — | Legacy test harness only |
 | Redis | 7.2 | — | Legacy test harness only |
-| Next.js | 15.5 | — | Track latest stable (OpenNext Worker output) |
+| Next.js | 16.4 | — | Track latest stable (OpenNext Worker output) |
 | React | 19.2 | — | Match Next.js 15.x |
 | pnpm | 9.0 | — | Package manager |
 | wrangler | latest | — | Cloudflare CLI; keep current for D1/Workers feature support |

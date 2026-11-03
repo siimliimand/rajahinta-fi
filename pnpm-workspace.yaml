@@ -2,10 +2,13 @@ packages:
   - 'apps/*'
   - 'packages/*'
 allowBuilds:
+  '@parcel/watcher': true
   '@playwright/browser-chromium': true
   '@scarf/scarf': true
+  '@swc/core': true
   esbuild: true
   msgpackr-extract: true
   protobufjs: true
   unix-dgram: true
   unrs-resolver: true
+  workerd: true

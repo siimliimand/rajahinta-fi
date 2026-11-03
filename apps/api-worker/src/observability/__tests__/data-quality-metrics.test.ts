@@ -111,6 +111,29 @@ function envWith(ae: { binding: AnalyticsEngineDataset } | null): Env {
   return (ae === null ? {} : { METRICS: ae.binding }) as unknown as Env;
 }
 
+/**
+ * One materialized `merchant_reliability_aggregates` row (migration
+ * 0035's shape; the four status buckets must sum to offer_count — the
+ * table's CHECK). The gauge reads since task 2.2 (change
+ * d1-read-cost-reduction) come from this store, so the suites seed it
+ * directly instead of relying on raw `retail_offers` rows.
+ */
+function seedAggregate(
+  d1: D1DatabaseLike,
+  merchant: string,
+  freshestObservedAt: string,
+): void {
+  void d1
+    .prepare(
+      `INSERT INTO merchant_reliability_aggregates (
+         merchant, offer_count, verified_count, estimated_count,
+         stale_count, unavailable_count, freshest_observed_at, computed_at
+       ) VALUES (?, 2, 1, 0, 1, 0, ?, '2026-09-30T06:00:00.000Z')`,
+    )
+    .bind(merchant, freshestObservedAt)
+    .run();
+}
+
 // ---------------------------------------------------------------------------
 // Metric-name contracts
 // ---------------------------------------------------------------------------
@@ -375,12 +398,12 @@ describe('D1 measurements (migrated fake D1)', () => {
     });
   });
 
-  it('measureFeedLastSuccesses reads the newest offer per live registry feed', async () => {
+  it("measureFeedLastSuccesses reads each live feed's last success from the materialized aggregates", async () => {
     const { d1 } = openMigratedD1();
     seedCoverageData(d1);
     const registry: Array<[number, string, string]> = [
       [1, 'alko', 'https://feeds.example/alko.json'],
-      [2, 'fresh-onboard', 'https://feeds.example/fresh.json'], // live feed, no offers yet
+      [2, 'fresh-onboard', 'https://feeds.example/fresh.json'], // live feed, not yet materialized
       [3, 'unwired', ''], // empty feed URL — producer skips, not a feed
     ];
     for (const [id, merchantId, feedUrl] of registry) {
@@ -392,10 +415,17 @@ describe('D1 measurements (migrated fake D1)', () => {
         .bind(id, merchantId, merchantId, feedUrl)
         .run();
     }
+    // Task 2.2 (change d1-read-cost-reduction): the instant comes from
+    // merchant_reliability_aggregates.freshest_observed_at, deliberately
+    // seeded BEHIND the raw offers' max (2026-09-30…) and at an instant
+    // no retail_offers row carries — the assertion below can only pass
+    // through the materialized read.
+    seedAggregate(d1, 'alko', '2026-09-28T00:00:00.000Z');
     const newest = await measureFeedLastSuccesses(d1);
     expect(Object.keys(newest).sort()).toEqual(['alko', 'fresh-onboard']);
-    expect(newest['alko']?.toISOString()).toBe('2026-09-30T06:00:00.000Z');
-    // Live feed that has never published an offer → null (the +Inf sentinel at write time).
+    expect(newest['alko']?.toISOString()).toBe('2026-09-28T00:00:00.000Z');
+    // Live feed whose aggregates row has not materialized yet → null (the
+    // +Inf sentinel at write time) — the LEFT JOIN's NULL, preserved.
     expect(newest['fresh-onboard']).toBeNull();
   });
 });
@@ -421,6 +451,10 @@ describe('measureAndRecordDataQualityGauges (fake AE + fake D1)', () => {
          VALUES (1, 'alko', 'FI', 1, 100, '2026-08-30T06:00:00Z')`,
       )
       .run();
+    // The feed-age gauge reads the materialized store (task 2.2, change
+    // d1-read-cost-reduction) — seed alko's aggregates row whose
+    // freshest_observed_at the expected 6 h age is computed from.
+    seedAggregate(d1, 'alko', '2026-08-30T06:00:00.000Z');
     void d1
       .prepare(
         `INSERT INTO merchant_registry (id, merchant_id, name, country, feed_url, feed_format, polling_interval_ms)

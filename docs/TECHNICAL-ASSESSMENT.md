@@ -250,7 +250,7 @@ Remediation change: `openspec/changes/technical-assessment-remediation` (branch 
 - In-memory rate limiter, audit repository, and click analytics: replaced (tasks 4.1–4.3, see finding 9).
 - Static merchant configuration: `merchants.config.ts` deleted, replaced by the database-backed registry (task 7.2).
 - `:latest` image reference: replaced with immutable SHA tags set by the deploy pipeline (task 11.1).
-- Dependency generations: Next.js 15.5, React 19.2, next-intl 4.14, Vitest 3.2 (task 12.3). Browser e2e and load suites run after the upgrade (tasks 12.2, 13.1).
+- Dependency generations: Next.js 16.4, React 19.2, next-intl 4.14, Vitest 3.2 (task 12.3). Browser e2e and load suites run after the upgrade (tasks 12.2, 13.1).
 
 ### Add
 

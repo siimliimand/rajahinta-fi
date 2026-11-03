@@ -174,20 +174,33 @@ export default function CompareView() {
               .then((detail) => comparisonProductFromDeal(row, detail)),
           ),
         );
-        if (!cancelled) setProducts(columns);
+        if (!cancelled) {
+          // Fill only an empty grid: if the visitor added a real product
+          // while this read-only chain was in flight, their column wins —
+          // the examples demonstrate the grid while it is empty and never
+          // take it over. (The race is real: Next 16's shifted effect/
+          // fetch timing let a late prefill overwrite a user column and
+          // broke the compare e2e journeys.)
+          setProducts((prev) => (prev.length > 0 ? prev : columns));
+        }
       })
       .catch(() => {
         // Honest degrade: an empty listing (no materialized day) or a
         // failed read leaves the existing empty state standing.
       })
       .finally(() => {
-        if (!cancelled) setPrefilling(false);
+        // The loading flag tracks the CHAIN, so it clears unconditionally:
+        // `cancelled` guards the content writes only. Under StrictMode's
+        // double-invoke (and any hydration-recovery remount) the ref guard
+        // makes this the only chain while `cancelled` is already true —
+        // a conditional clear here left the grid skeletons forever and
+        // broke the compare e2e journeys under Next 16's dev runtime.
+        setPrefilling(false);
       });
     return () => {
       cancelled = true;
     };
   }, []);
-
   // Guard against duplicate submissions
   const searchInFlight = useRef(false);
 
@@ -289,7 +302,13 @@ export default function CompareView() {
           ...(unitPrice !== undefined ? { eurPerGram: unitPrice } : {}),
         };
 
-        setProducts((prev) => [...prev, comparisonProduct]);
+        // A real selection replaces the example columns — demo figures
+        // (snapshot totals, no calculation) never mix with a calculated
+        // column. Inverse of the prefill's only-fill-empty rule.
+        setProducts((prev) => [
+          ...prev.filter((p) => !('example' in p)),
+          comparisonProduct,
+        ]);
       } catch (err: unknown) {
         const message =
           err instanceof Error ? err.message : tCalc('calculationFailed');
