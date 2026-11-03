@@ -17,7 +17,7 @@ infra/
     dev.yaml       # local development (wrangler dev, local D1/R2/DO simulators)
     staging.yaml   # pre-production validation (workers.dev staging URLs)
     prod.yaml      # production hardened (custom domains, gated deploys)
-  grafana/         # Grafana Cloud artifacts: data-quality dashboard + threshold alerts
+  grafana/         # Grafana Cloud artifacts: data-quality + calendar dashboards, threshold alerts
   staging-data/    # test fixture SQL (staging-reviews.sql feeds scripts/test-data-quality.sh)
   README.md
 ```
@@ -104,6 +104,18 @@ transport newest-offer age) intentionally do **not** page from Grafana:
 they are evaluated from D1 by the in-Worker freshness-alert cron
 (`apps/api-worker/src/cron/freshness-alert.ts`) and delivered via the
 email Worker.
+
+**Calendar watcher watch** (2026-10-26 health review of the archived
+`calendar-event-automation` change): `calendar-watcher-alerts.yaml`
+pages on review-queue staleness (oldest PENDING candidate > 7 days)
+and watcher insert silence (> 336 h), and
+`calendar-automation-dashboard.json` shows the live queue counters.
+These read the PRODUCTION D1 `calendar_event_candidates` table through
+a dedicated D1-scoped Infinity data source (the AE data source token
+cannot call the D1 query API) — import notes in the file header. The
+watcher's proper per-tick liveness signal (an AE blob metric with
+`noDataState: Alerting`) needs a cron-handler change and is tracked as
+a follow-up with the platform engineer.
 
 **How to import** (one-time per Grafana Cloud stack):
 
