@@ -120,8 +120,9 @@ describe('FI product tree layout metadata (fi-path-isr 3.3)', () => {
     // canonical against it — the resolution the emitted
     // <link rel="canonical"> performs (compared by href: URL objects
     // have no enumerable own properties, so a structural equal would
-    // not distinguish origins).
-    expect(meta.metadataBase?.href).toBe(new URL(SITE_URL).href);
+    // not distinguish origins). Next 16 widened MetadataBase to
+    // string | URL — normalize through new URL for the href compare.
+    expect(new URL(meta.metadataBase!).href).toBe(new URL(SITE_URL).href);
     expect(new URL('/tuotteet/7872', meta.metadataBase!).href).toBe(
       `${new URL(SITE_URL).origin}/tuotteet/7872`,
     );

@@ -407,10 +407,23 @@ function emitStalePriceShare(
  * anchor is its own UTC day, so `period_start >= <window-start day>`
  * covers every daily bucket the job would have written for in-window
  * observations, and weekly rows are redundant for existence.
+ *
+ * WHY INDEXED BY (task 2.2, change d1-read-cost-reduction): the planner
+ * does NOT reach for retail_offers_observed_at_product_idx on its own —
+ * it picks SCAN … USING INDEX retail_offers_product_merchant_id_idx
+ * because COUNT(DISTINCT product_id) over product_id-ordered rows avoids
+ * the DISTINCT temp b-tree (verified on staging D1 2026-10-25 and local
+ * SQLite 3.53.4 at production volume, even post-ANALYZE). This variant
+ * is always ISO-week-bounded, so forcing the (observed_at, product_id)
+ * covering index turns the read into a ~one-week range scan instead of a
+ * whole-table index scan; the plan is pinned by the migration-0041 D1
+ * suite. The UNBOUNDED first-run variant below stays hint-free on
+ * purpose — the first pass is a deliberate whole-log read.
  */
 const SUMMARY_COVERAGE_BOUNDED_SQL = `
   SELECT
     (SELECT COUNT(DISTINCT product_id) FROM retail_offers
+      INDEXED BY retail_offers_observed_at_product_idx
       WHERE observed_at >= ?) AS products_with_observations,
     (SELECT COUNT(DISTINCT product_id) FROM price_history_summaries
       WHERE granularity = 'daily' AND period_start >= ?) AS summarized_products`;

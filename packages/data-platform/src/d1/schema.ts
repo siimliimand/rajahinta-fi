@@ -217,6 +217,18 @@ export const productMaster = sqliteTable(
     // must be index-bounded, not a per-sweep table scan. Migration 0023
     // creates the index; this declaration mirrors it 1:1.
     index('product_master_category_idx').on(table.category),
+    // Task 1.1 (change d1-read-cost-reduction): the ingestion upsert's
+    // Tier-1 EAN match (FIND_BY_EAN_SQL) and Tier-2 compound match
+    // (FIND_BY_COMPOUND_SQL) filter on these keys once per mapped
+    // product per feed run — unindexed they were full catalog scans
+    // per row. Migration 0041 creates the indexes; 1:1 mirror.
+    index('product_master_ean_idx').on(table.ean),
+    index('product_master_name_brand_container_volume_idx').on(
+      table.name,
+      table.brand,
+      table.containerType,
+      table.unitVolume,
+    ),
   ],
 );
 
@@ -272,6 +284,17 @@ export const retailOffers = sqliteTable(
       table.merchant,
       table.productId,
       table.observedAt,
+    ),
+    // Task 1.1 (change d1-read-cost-reduction): the bounded coverage
+    // gauge (SUMMARY_COVERAGE_BOUNDED_SQL, time-series-aggregation.ts)
+    // counts DISTINCT product_id over an observed_at window on every
+    // aggregation tick — the only observed_at-leading predicate on this
+    // table had no serving index. Leading observed_at bounds the range,
+    // trailing product_id makes the count covering. Migration 0041;
+    // 1:1 mirror.
+    index('retail_offers_observed_at_product_idx').on(
+      table.observedAt,
+      table.productId,
     ),
     check('retail_offers_reliability_status_check', sql`${table.reliabilityStatus} IN ${RELIABILITY_VALUES}`),
   ],

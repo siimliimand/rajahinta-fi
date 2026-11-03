@@ -17,6 +17,10 @@
  *   next tick re-alerts;
  * - suppression window honored over the REAL IdempotencyDO job-claim
  *   namespace (in-memory DO storage), expired window → re-alert;
+ * - the DEFAULT stale-share measurement reads the materialized
+ *   merchant_reliability_aggregates (task 2.2, change
+ *   d1-read-cost-reduction) — SUM(stale_count)/SUM(offer_count), never a
+ *   retail_offers recompute;
  * - router dispatch wiring for the 30-minute pattern.
  *
  * @module FreshnessAlertTest
@@ -42,6 +46,7 @@ import {
   createMemoryDoStorage,
 } from '../../do/__tests__/memory-do-storage';
 import type { Env } from '../../env';
+import { openMigratedD1 } from '../../analytics/__tests__/fake-d1';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -445,6 +450,87 @@ describe('handleFreshnessAlert', () => {
         message: expect.stringContaining('FRESHNESS_ALERT_SUPPRESSION_SECONDS'),
       }),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Default stale-share measurement — the materialized aggregates read
+// (task 2.2, change d1-read-cost-reduction)
+// ---------------------------------------------------------------------------
+
+describe('default measureStaleShare reads merchant_reliability_aggregates', () => {
+  /** One materialized aggregate row; the four buckets must sum to offer_count (table CHECK). */
+  function seedAggregate(
+    d1: ReturnType<typeof openMigratedD1>['d1'],
+    merchant: string,
+    offerCount: number,
+    staleCount: number,
+  ): void {
+    void d1
+      .prepare(
+        `INSERT INTO merchant_reliability_aggregates (
+           merchant, offer_count, verified_count, estimated_count,
+           stale_count, unavailable_count, freshest_observed_at, computed_at
+         ) VALUES (?, ?, ?, 0, ?, 0, '2026-08-30T06:00:00.000Z', '2026-08-30T06:00:00.000Z')`,
+      )
+      .bind(merchant, offerCount, offerCount - staleCount, staleCount)
+      .run();
+  }
+
+  it('the share is SUM(stale_count)/SUM(offer_count) over the materialized rows', async () => {
+    stubFetch();
+    const { d1 } = openMigratedD1();
+    seedAggregate(d1, 'alko', 60, 10);
+    seedAggregate(d1, 'alks', 40, 15);
+
+    // No measureStaleShare injected — the DEFAULT read runs against env.DB.
+    const result = await handleFreshnessAlert(alertEnv({ DB: d1 as unknown as Env["DB"] }), LOG, {
+      findNewestObservedAt: HEALTHY.findNewestObservedAt,
+    });
+
+    expect(result.staleShare).toEqual({ stale: 25, total: 100, share: 0.25 });
+    // 0.25 > 0.10 warning → paged through the spec-contract email.
+    expect(result.violations.map((v) => v.severity)).toEqual(['warning']);
+    expect(result.alertsSent).toHaveLength(1);
+  });
+
+  it('an empty aggregates table renders share 0 — nothing audited, no alert', async () => {
+    const fetchMock = stubFetch();
+    const { d1 } = openMigratedD1();
+
+    const result = await handleFreshnessAlert(alertEnv({ DB: d1 as unknown as Env["DB"] }), LOG, {
+      findNewestObservedAt: HEALTHY.findNewestObservedAt,
+    });
+
+    expect(result.staleShare).toEqual({ stale: 0, total: 0, share: 0 });
+    expect(result.violations).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('raw retail_offers rows alone never move the figure (no recompute — the materialized store is the source)', async () => {
+    stubFetch();
+    const { d1 } = openMigratedD1();
+    // STALE offers in the raw table with NO aggregates row materialized:
+    // the old R2/raw recompute would read them; the gauge must not.
+    void d1
+      .prepare(
+        `INSERT INTO product_master (id, name, manufacturer, brand, category, unit_volume, container_type, regulatory_classification)
+         VALUES (1, 'P', 'm', 'b', 'beer', '0.5', 'can', 'beer')`,
+      )
+      .run();
+    void d1
+      .prepare(
+        `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents, observed_at, reliability_status)
+         VALUES (1, 'alko', 'FI', 1, 100, '2026-08-01T00:00:00.000Z', 'STALE')`,
+      )
+      .run();
+
+    const result = await handleFreshnessAlert(alertEnv({ DB: d1 as unknown as Env["DB"] }), LOG, {
+      findNewestObservedAt: HEALTHY.findNewestObservedAt,
+    });
+
+    expect(result.staleShare).toEqual({ stale: 0, total: 0, share: 0 });
+    expect(result.violations).toEqual([]);
   });
 });
 

@@ -21,8 +21,10 @@ import {
   calculateLandedCost,
   getSavingsBestPerMerchant,
   getProductDetail,
+  searchProducts,
 } from '@/lib/api';
 import { renderWithIntl } from '@/lib/testing/test-intl';
+import userEvent from '@testing-library/user-event';
 import fiMessages from '@/messages/fi.json';
 import type { SavingsBestPerMerchantRow } from '@/lib/api';
 import type { ProductDetailResponse } from '@/lib/types';
@@ -54,6 +56,7 @@ vi.mock('@/i18n/navigation', () => ({
 const mockedGetSavingsBestPerMerchant = vi.mocked(getSavingsBestPerMerchant);
 const mockedGetProductDetail = vi.mocked(getProductDetail);
 const mockedCalculateLandedCost = vi.mocked(calculateLandedCost);
+const mockedSearchProducts = vi.mocked(searchProducts);
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -122,6 +125,156 @@ function detailFor(id: number, name: string): ProductDetailResponse {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe('CompareView user add vs example prefill (next16 race regression)', () => {
+  /** Manual resolution for the prefill chain — the race driver. */
+  function deferredPrefill(): {
+    resolve: (v: { asOf: string | null; merchants: SavingsBestPerMerchantRow[] }) => void;
+    promise: Promise<{ asOf: string | null; merchants: SavingsBestPerMerchantRow[] }>;
+  } {
+    let resolve!: (v: {
+      asOf: string | null;
+      merchants: SavingsBestPerMerchantRow[];
+    }) => void;
+    const promise = new Promise<{
+      asOf: string | null;
+      merchants: SavingsBestPerMerchantRow[];
+    }>((r) => {
+      resolve = r;
+    });
+    return { resolve, promise };
+  }
+
+  const SEARCH_ITEM = {
+    id: 9001,
+    name: 'Olut Beeri',
+    brand: 'Beeri',
+    category: 'beer',
+    alcoholByVolume: 4.7,
+    unitVolume: '0.5',
+    containerType: 'CAN',
+    lowestPriceCents: 299,
+    merchantCount: 1,
+  } as const;
+
+  async function addViaSearch(item: typeof SEARCH_ITEM) {
+    mockedSearchProducts.mockResolvedValue({
+      items: [item],
+      total: 1,
+      page: 1,
+      limit: 20,
+      totalPages: 1,
+      savingsAsOf: null,
+    });
+    await userEvent.click(
+      screen.getAllByRole('button', { name: /Lisää tuote/ })[0],
+    );
+    // The toolbar search box is the first textbox (each add tile embeds
+    // its own — only the searched one renders results).
+    await userEvent.type(screen.getAllByRole('textbox')[0], 'olut');
+    await userEvent.click(screen.getAllByRole('button', { name: 'Hae' })[0]);
+    // The result button's accessible name is its full text content
+    // (name + attribute row + price) — match on the product name.
+    await userEvent.click(
+      await screen.findByRole('button', { name: new RegExp(item.name) }),
+    );
+  }
+
+  it('a real add replaces the example columns — demo figures never mix with a calculated column', async () => {
+    // Prefill resolves long before the add: examples render first.
+    mockedGetSavingsBestPerMerchant.mockResolvedValue({
+      asOf: '2026-10-05',
+      merchants: [ROW],
+    });
+    mockedGetProductDetail.mockImplementation(async (id: number) => {
+      if (id === ROW.productId) return detailFor(id, ROW.productName);
+      if (id === SEARCH_ITEM.id)
+        return {
+          ...detailFor(id, SEARCH_ITEM.name),
+          product: { ...detailFor(id, SEARCH_ITEM.name).product, brand: 'Beeri' },
+        };
+      throw new Error('offline');
+    });
+    mockedCalculateLandedCost.mockResolvedValue({
+      totalCents: 499,
+      itemizedCosts: [
+        {
+          label: SEARCH_ITEM.name,
+          category: 'foreignRetailPrice',
+          cents: 299,
+          reliability: 'VERIFIED',
+        },
+      ],
+      confidence: 'HIGH',
+      idempotencyKey: 'k1',
+      destination: 'FI',
+      breakdown: [],
+    } as never);
+
+    renderWithIntl(<CompareView />);
+    await screen.findByTestId('example-column-badge');
+
+    await addViaSearch(SEARCH_ITEM);
+
+    // The example column is gone; the user's calculated column stands.
+    await waitFor(() =>
+      expect(screen.queryByTestId('example-column-badge')).toBeNull(),
+    );
+    expect(screen.getByText(SEARCH_ITEM.name)).toBeInTheDocument();
+    expect(mockedCalculateLandedCost).toHaveBeenCalledWith(
+      expect.objectContaining({ productId: SEARCH_ITEM.id }),
+    );
+  });
+
+  it('a prefill resolving after a user add never clobbers the user column', async () => {
+    // THE RACE: the prefill chain lands after the visitor's add. The
+    // late fill must keep the user's column (Next 16 e2e regression:
+    // compare-sorting journey broke on exactly this ordering).
+    const prefill = deferredPrefill();
+    mockedGetSavingsBestPerMerchant.mockReturnValue(prefill.promise);
+    mockedGetProductDetail.mockImplementation(async (id: number) => {
+      if (id === SEARCH_ITEM.id)
+        return {
+          ...detailFor(id, SEARCH_ITEM.name),
+          product: { ...detailFor(id, SEARCH_ITEM.name).product, brand: 'Beeri' },
+        };
+      if (id === ROW.productId) return detailFor(id, ROW.productName);
+      throw new Error('offline');
+    });
+    mockedCalculateLandedCost.mockResolvedValue({
+      totalCents: 499,
+      itemizedCosts: [
+        {
+          label: SEARCH_ITEM.name,
+          category: 'foreignRetailPrice',
+          cents: 299,
+          reliability: 'VERIFIED',
+        },
+      ],
+      confidence: 'HIGH',
+      idempotencyKey: 'k1',
+      destination: 'FI',
+      breakdown: [],
+    } as never);
+
+    renderWithIntl(<CompareView />);
+    await addViaSearch(SEARCH_ITEM);
+    // No immediate column assertion here: while the prefill chain is in
+    // flight the grid intentionally shows its loading shape (the while-
+    // empty demonstration contract) — the column's fate is decided when
+    // the late prefill lands, which is what the assertions below pin.
+
+    // The late prefill arrives — the user column must win.
+    prefill.resolve({ asOf: '2026-10-05', merchants: [ROW] });
+    await waitFor(() =>
+      expect(mockedGetProductDetail).toHaveBeenCalledWith(ROW.productId),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId('example-column-badge')).toBeNull(),
+    );
+    expect(screen.getByText(SEARCH_ITEM.name)).toBeInTheDocument();
+  });
 });
 
 describe('CompareView example prefill (task 3.2, savings-first-catalog-and-prefill)', () => {
