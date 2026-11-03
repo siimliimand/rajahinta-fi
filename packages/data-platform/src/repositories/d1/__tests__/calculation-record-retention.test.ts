@@ -1,13 +1,16 @@
 /**
  * D1CalculationRecordRetentionService — real-SQLite tests (task 2.5,
  * design D4 as amended by gate review G1). Proves the anonymous 30-day
- * semantics, the ALL-records age cap (default 180, config-driven),
+ * semantics, the ALL-records age cap (fallback 180, override-injectable),
  * bounded batch deletes (batchSize respected, loop terminates), and the
- * sweep of both calculation-record tables.
+ * sweep of both calculation-record tables. Windows are injected as
+ * explicit `retentionDays` / `ageCapDays` params — the service resolves
+ * no environment (Workers runtime has no `process`; see the nightly
+ * sweep repair change), so absent params must yield the 30/180 fallbacks.
  *
  * @module D1CalculationRecordRetentionTest
  */
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { openMigratedD1 } from './d1-test-harness';
 import { D1CalculationRecordRetentionService } from '../calculation-record-retention';
 
@@ -23,11 +26,6 @@ beforeEach(() => {
 });
 
 const NOW = new Date('2026-08-28T04:30:00.000Z');
-
-afterEach(() => {
-  delete process.env.CALCULATION_RECORD_RETENTION_DAYS;
-  delete process.env.CALCULATION_RECORD_AGE_CAP_DAYS;
-});
 
 let productSeq = 900;
 function seedProduct(): number {
@@ -78,22 +76,18 @@ describe('D1CalculationRecordRetentionService', () => {
     expect(countRows('calculation_records')).toBe(2);
   });
 
-  it('honours the configured anonymous window from the environment', async () => {
-    process.env.CALCULATION_RECORD_RETENTION_DAYS = '7';
+  it('honours an explicit anonymous-window override', async () => {
     seedRecord({ calculatedAt: new Date(NOW.getTime() - 8 * 86_400_000).toISOString() });
     seedRecord({ calculatedAt: new Date(NOW.getTime() - 6 * 86_400_000).toISOString() });
 
-    const result = await retention.runRetention({ now: NOW });
+    const result = await retention.runRetention({ now: NOW, retentionDays: 7 });
     expect(result.anonymousCutoff.toISOString()).toBe(
       new Date(NOW.getTime() - 7 * 86_400_000).toISOString(),
     );
     expect(result.prunedAnonymous['calculation_records']).toBe(1);
   });
 
-  it('falls back to the defaults on invalid environment values', async () => {
-    process.env.CALCULATION_RECORD_RETENTION_DAYS = 'zero';
-    process.env.CALCULATION_RECORD_AGE_CAP_DAYS = '-5';
-
+  it('falls back to the documented 30/180-day windows when no overrides are passed', async () => {
     const result = await retention.runRetention({ now: NOW });
     expect(result.anonymousCutoff.toISOString()).toBe(
       new Date(NOW.getTime() - 30 * 86_400_000).toISOString(),
@@ -117,12 +111,11 @@ describe('D1CalculationRecordRetentionService', () => {
     expect(countRows('calculation_records', "WHERE session_id = 'sess-recent'")).toBe(1);
   });
 
-  it('honours a configured age cap', async () => {
-    process.env.CALCULATION_RECORD_AGE_CAP_DAYS = '90';
+  it('honours an explicit age-cap override', async () => {
     seedRecord({ sessionId: 'sess-90', calculatedAt: new Date(NOW.getTime() - 91 * 86_400_000).toISOString() });
     seedRecord({ sessionId: 'sess-89', calculatedAt: new Date(NOW.getTime() - 89 * 86_400_000).toISOString() });
 
-    const result = await retention.runRetention({ now: NOW });
+    const result = await retention.runRetention({ now: NOW, ageCapDays: 90 });
     expect(result.ageCapped['calculation_records']).toBe(1);
     expect(countRows('calculation_records', "WHERE session_id = 'sess-89'")).toBe(1);
   });

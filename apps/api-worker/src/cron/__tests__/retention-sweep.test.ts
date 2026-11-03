@@ -141,4 +141,26 @@ describe('handleRetentionSweep (D1CalculationRecordRetentionService)', () => {
     expect(result.anonymousCutoff).toEqual(new Date(+NOW - 7 * DAY));
     expect(result.ageCapCutoff).toEqual(new Date(+NOW - 90 * DAY));
   });
+
+  it('completes on fallback windows when Env carries neither wrangler var (production shape)', async () => {
+    const { env, db } = createEnv();
+    // Production wrangler config sets no CALCULATION_RECORD_* vars, so
+    // this bare env is the exact shape handleRetentionSweep sees at
+    // 03:30 UTC nightly. The service resolves only explicit params ??
+    // constants — if any process.env lookup ever reappears below the
+    // handler, this pin fails on Workers (where `process` is undefined),
+    // which is precisely the 2026-10/11 nightly-failure incident.
+    expect(env.CALCULATION_RECORD_RETENTION_DAYS).toBeUndefined();
+    expect(env.CALCULATION_RECORD_AGE_CAP_DAYS).toBeUndefined();
+    seedCalculationRecord(db, 1, { sessionId: null, calculatedAt: new Date(+NOW - 31 * DAY) });
+
+    const result = await handleRetentionSweep(env, LOG, { now: NOW });
+
+    expect(result.anonymousCutoff.getTime()).toBe(+NOW - 30 * DAY);
+    expect(result.ageCapCutoff.getTime()).toBe(+NOW - 180 * DAY);
+    expect(result.prunedAnonymous.calculation_records).toBe(1);
+    expect(result.ageCapped.calculation_records).toBe(0);
+    expect(result.batchSize).toBe(500);
+    expect(rowIds(db)).toEqual([]);
+  });
 });
