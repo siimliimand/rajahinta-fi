@@ -1,0 +1,11 @@
+# Tasks
+
+## 1. Repair
+
+- [ ] 1.1 Spec delta: `background-jobs` ADDED requirement "Retention sweeps resolve configuration from deployment config, never the Node process environment" (sweep completes with no vars set; wrangler vars override defaults); `openspec validate --strict` passes <!-- agent: platform-engineer.build, depends_on: [], touches: [openspec/changes/nightly-sweep-repair/specs/**] -->
+- [ ] 1.2 Service repair: remove `configuredDays` and all `process.env` resolution from `D1CalculationRecordRetentionService` (explicit params ?? code fallbacks: anonymous 30-day window, 180-day age cap) with a WHY comment at the removal site (Workers runtime, nightly-failure incident); rewrite `calculation-record-retention.test.ts` to inject explicit windows instead of mutating `process.env` (absent-param fallback cases assert the same constants); add api-worker cron regression test — `handleRetentionSweep` with an `Env` carrying neither var completes and returns pruned counts (the exact production shape) <!-- agent: platform-engineer.build, depends_on: [1.1], touches: [packages/data-platform/src/repositories/d1/calculation-record-retention.ts, packages/data-platform/src/repositories/d1/__tests__/calculation-record-retention.test.ts, apps/api-worker/src/cron/__tests__/] -->
+
+## 2. Verification
+
+- [ ] 2.1 Run typecheck, eslint, unit suites, and the D1 suite; fix fallout <!-- agent: platform-engineer.fast, depends_on: [1.2], touches: [] -->
+- [ ] 2.2 Deploy + nightly verification: staging deploy smoke, then gated production deploy (`workflow_dispatch` + `confirm_deploy=yes`); after the next 03:30 UTC tick confirm Workers Logs shows `Retention sweep finished: pruned anonymous …` with no error, and prod D1 shows the past-window count dropping from 64,659 toward 0; record the drain duration in the change notes (bounded per statement, unbounded loop — idempotent by cutoff) <!-- agent: devops-engineer.fast, depends_on: [2.1], touches: [] -->
