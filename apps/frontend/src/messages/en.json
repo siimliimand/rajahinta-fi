@@ -1710,6 +1710,8 @@
     "noMerchants": "No merchants in the registry.",
     "grantRecorded": "Permission granted: {merchant}",
     "revokeRecorded": "Permission revoked: {merchant}",
+    "grantNeedsSourceUrl": "Granting requires a source URL.",
+    "revokeNeedsNote": "Revoking requires a note or reason.",
     "confirmationsTitle": "Dataset-version confirmation",
     "confirmationsIntro": "Exchange-rate datasets and tax-rate review entries awaiting confirmation. A confirmed version becomes effective; a rejected change keeps the previous version in force.",
     "note": "Note",

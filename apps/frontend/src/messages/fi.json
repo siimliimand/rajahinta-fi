@@ -1710,6 +1710,8 @@
     "noMerchants": "Rekisterissä ei ole kauppiaita.",
     "grantRecorded": "Oikeus myönnetty: {merchant}",
     "revokeRecorded": "Oikeus peruttu: {merchant}",
+    "grantNeedsSourceUrl": "Myöntäminen vaatii lähteen osoitteen.",
+    "revokeNeedsNote": "Peruuttaminen vaatii kirjauksen tai syyn.",
     "confirmationsTitle": "Aineistoversioiden vahvistus",
     "confirmationsIntro": "Vahvistusta odottavat valuuttakurssiaineistot ja verokannan muutosmääritykset. Vahvistettu versio tulee voimaan; hylätty muutos säilyttää edellisen version voimassa.",
     "note": "Kirjaus",
