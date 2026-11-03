@@ -7,9 +7,9 @@
  * calculation-record tables — the amended D4 retention model for D1:
  *
  *   1. Anonymous pruning — rows with no session link (session_id IS
- *      NULL) past the configured window are deleted. The existing
- *      30-day semantics are preserved, including the
- *      CALCULATION_RECORD_RETENTION_DAYS environment name and default.
+ *      NULL) past the retention window are deleted. The existing
+ *      30-day semantics are preserved as the code fallback; wrangler
+ *      vars enter via the cron handler's explicit overrides.
  *   2. Age cap (gate-review decision 3) — ALL records, session-bearing
  *      included, are deleted past the configured cap. This REPLACES the
  *      pg rule "session-bearing rows are never pruned"; default 180
@@ -29,12 +29,10 @@
 import { Injectable } from '@nestjs/common';
 import type { D1DatabaseLike } from '../../d1/executor';
 
-/** Retention window for anonymous (session_id IS NULL) calculation rows. */
-const RETENTION_DAYS_ENV = 'CALCULATION_RECORD_RETENTION_DAYS';
+/** Fallback retention window for anonymous (session_id IS NULL) calculation rows. */
 const DEFAULT_RETENTION_DAYS = 30;
 
-/** Age cap for ALL calculation records (gate-review decision, D4 amended). */
-const AGE_CAP_DAYS_ENV = 'CALCULATION_RECORD_AGE_CAP_DAYS';
+/** Fallback age cap for ALL calculation records (gate-review decision, D4 amended). */
 const DEFAULT_AGE_CAP_DAYS = 180;
 
 /** Default rows deleted per DELETE statement. */
@@ -67,9 +65,10 @@ export class D1CalculationRecordRetentionService {
   constructor(private readonly d1: D1DatabaseLike) {}
 
   /**
-   * Run one retention sweep: prune anonymous rows past the configured
-   * window, then age-cap every record past the configured cap — both as
-   * bounded batch DELETEs.
+   * Run one retention sweep: prune anonymous rows past the retention
+   * window, then age-cap every record past the age cap — both as
+   * bounded batch DELETEs. Windows are explicit parameters or the
+   * fallback constants; the service does no environment resolution.
    */
   async runRetention(overrides?: {
     now?: Date;
@@ -78,10 +77,14 @@ export class D1CalculationRecordRetentionService {
     batchSize?: number;
   }): Promise<D1RetentionRunResult> {
     const now = overrides?.now ?? new Date();
-    const retentionDays =
-      overrides?.retentionDays ?? this.configuredDays(RETENTION_DAYS_ENV, DEFAULT_RETENTION_DAYS);
-    const ageCapDays =
-      overrides?.ageCapDays ?? this.configuredDays(AGE_CAP_DAYS_ENV, DEFAULT_AGE_CAP_DAYS);
+    // WHY no process.env fallback here: the Workers runtime has no
+    // `process` global — that lookup is what crashed every nightly run
+    // in the 2026-10/11 incident before the first DELETE executed.
+    // Wrangler vars reach the sweep as explicit overrides via the cron
+    // handler (parseDays over env.CALCULATION_RECORD_*), so this
+    // service resolves only explicit params ?? these constants.
+    const retentionDays = overrides?.retentionDays ?? DEFAULT_RETENTION_DAYS;
+    const ageCapDays = overrides?.ageCapDays ?? DEFAULT_AGE_CAP_DAYS;
     const batchSize = overrides?.batchSize ?? DEFAULT_BATCH_SIZE;
     if (!Number.isInteger(batchSize) || batchSize < 1) {
       throw new RangeError(`batchSize must be a positive integer, got ${batchSize}`);
@@ -146,18 +149,5 @@ export class D1CalculationRecordRetentionService {
       }
     }
     return deleted;
-  }
-
-  /** Configured window in days (>= 1), mirroring the pg service's env parsing. */
-  private configuredDays(envName: string, fallbackDays: number): number {
-    const raw = process.env[envName];
-    if (raw === undefined || raw.trim() === '') {
-      return fallbackDays;
-    }
-    const parsed = Number.parseInt(raw, 10);
-    if (!Number.isFinite(parsed) || parsed < 1) {
-      return fallbackDays;
-    }
-    return parsed;
   }
 }
