@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change 2026-08-26-phase2-historical-price-intelligence. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Time-series aggregation worker materializes summaries
 
 Time-series aggregation SHALL run as a scheduled Cron Trigger in the API Worker. It SHALL scan `priceObservations` past the aggregation watermark, materialize the same summary rows as today, and advance the watermark idempotently. A failed run SHALL leave the watermark unchanged so the next run redoes the window.
@@ -58,3 +60,16 @@ A scheduled job SHALL evaluate active price alerts after ingestion cycles. The j
 - **WHEN** email delivery fails for one alert
 - **THEN** the failure SHALL be counted and surfaced through the observability metrics without blocking evaluation of other alerts
 
+### Requirement: Retention sweeps resolve configuration from deployment config, never the Node process environment
+
+Scheduled retention sweeps running on Workers SHALL resolve their configuration (retention windows, batch sizes) from explicit deployment config (wrangler vars passed by the cron handler) or from code fallbacks, and SHALL NOT reference the Node `process` global. A sweep SHALL complete successfully when no configuration vars are set, applying the code-default windows; wrangler vars, when present, SHALL override the defaults.
+
+#### Scenario: Sweep completes with no vars set
+
+- **WHEN** the retention sweep runs in an environment where no retention configuration vars exist (the production shape)
+- **THEN** the sweep completes and prunes rows past the code-default windows, and no handler log carries a `process is not defined` error
+
+#### Scenario: Deployment vars override the defaults
+
+- **WHEN** a wrangler var carrying a valid positive day count is set
+- **THEN** the sweep applies that window instead of the code default
