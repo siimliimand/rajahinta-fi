@@ -7,5 +7,5 @@
 
 ## 2. Verification
 
-- [ ] 2.1 Run typecheck, eslint, unit suites, and the D1 suite; fix fallout <!-- agent: platform-engineer.fast, depends_on: [1.2], touches: [] -->
+- [x] 2.1 Run typecheck, eslint, unit suites, and the D1 suite; fix fallout <!-- agent: platform-engineer.fast, depends_on: [1.2], touches: [] -->
 - [ ] 2.2 Deploy + nightly verification: staging deploy smoke, then gated production deploy (`workflow_dispatch` + `confirm_deploy=yes`); after the next 03:30 UTC tick confirm Workers Logs shows `Retention sweep finished: pruned anonymous …` with no error, and prod D1 shows the past-window count dropping from 64,659 toward 0; record the drain duration in the change notes (bounded per statement, unbounded loop — idempotent by cutoff) <!-- agent: devops-engineer.fast, depends_on: [2.1], touches: [] -->
