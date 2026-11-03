@@ -201,6 +201,8 @@ function GovernanceSection({
   const [method, setMethod] = useState<string>(ACQUISITION_METHODS[0]);
   const [sourceUrl, setSourceUrl] = useState('');
   const [note, setNote] = useState('');
+  const grantReady = sourceUrl.trim() !== '';
+  const revokeReady = note.trim() !== '';
 
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-5">
@@ -243,6 +245,16 @@ function GovernanceSection({
         </label>
       </div>
 
+      {/* The row buttons are disabled until their shared field is filled —
+          state the requirement instead of leaving a faded dead click. */}
+      {(!grantReady || !revokeReady) && (
+        <p className="mt-3 text-xs text-gray-500">
+          {!grantReady && <span>{t('grantNeedsSourceUrl')}</span>}
+          {!grantReady && !revokeReady && ' '}
+          {!revokeReady && <span>{t('revokeNeedsNote')}</span>}
+        </p>
+      )}
+
       <table className="mt-4 w-full text-left text-xs">
         <thead>
           <tr className="border-b border-gray-200 text-gray-500">
@@ -267,7 +279,8 @@ function GovernanceSection({
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    disabled={sourceUrl.trim() === ''}
+                    disabled={!grantReady}
+                    title={grantReady ? undefined : t('grantNeedsSourceUrl')}
                     onClick={() =>
                       onAction(t('grantRecorded', { merchant: merchant.name }), () =>
                         grantGovernance(token, merchant.merchantId, {
@@ -284,7 +297,8 @@ function GovernanceSection({
                   </button>
                   <button
                     type="button"
-                    disabled={note.trim() === ''}
+                    disabled={!revokeReady}
+                    title={revokeReady ? undefined : t('revokeNeedsNote')}
                     onClick={() =>
                       onAction(t('revokeRecorded', { merchant: merchant.name }), () =>
                         revokeGovernance(token, merchant.merchantId, {
