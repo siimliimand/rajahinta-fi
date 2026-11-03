@@ -10,7 +10,7 @@
  *
  * @module D1CalculationRecordRetentionTest
  */
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { openMigratedD1 } from './d1-test-harness';
 import { D1CalculationRecordRetentionService } from '../calculation-record-retention';
 
