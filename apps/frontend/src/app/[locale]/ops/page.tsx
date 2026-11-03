@@ -14,6 +14,7 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import OperatorConsole from './components/OperatorConsole';
+import OpsConsoleNav from './components/OpsConsoleNav';
 
 export async function generateMetadata({
   params,
@@ -28,6 +29,16 @@ export async function generateMetadata({
   };
 }
 
-export default function OpsPage() {
-  return <OperatorConsole />;
+export default async function OpsPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  return (
+    <div className="space-y-6">
+      <OpsConsoleNav locale={locale} />
+      <OperatorConsole />
+    </div>
+  );
 }
