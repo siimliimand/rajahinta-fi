@@ -313,7 +313,7 @@ The R2 lifecycle rule is **not** touched by a Worker rollback: `wrangler rollbac
 
 ## Task 4.2 — production verification, immediate portion (2026-11-09)
 
-Deploy under test: production Workers from workflow run `42637429328` (this branch), frontend `rajahinta-frontend-production`, API `rajahinta-api-production`, bucket `rajahinta-frontend-cache-production` (EU). Live frontend deployment from **2026-11-09T14:45:11Z**. Live cache namespace: `incremental-cache/0tFvUE63ML6ljsBMGi8Ux/`.
+Deploy under test: production Workers from workflow run `42637429328` (this branch), frontend `rajahinta-frontend-production`, API `rajahinta-api-production`, bucket `rajahinta-frontend-cache-production` (EU). Live frontend deployment from **2026-11-09T14:45:11Z**. Live cache namespace of that build: `incremental-cache/0tFvUE63ML6ljsBMGi8Ux/` (superseded by the post-merge deploy — see the 24-hour follow-up section).
 
 The 24 h window has **not** elapsed. Everything below is the immediate portion (~14:45–15:30Z, under one hour post-deploy). No 24-hour measurement is claimed. See the pending subsection at the end.
 
@@ -388,9 +388,31 @@ action:   Expire objects after 30 days
 
 Per-URL `.fetch` shape in the live namespace (15:27Z) is the same 2–3 fetch-option shapes per blog/guides URL the lead session saw, not per-render growth. Tag census on those 32 `.fetch` bodies: `tags:null` ×17, `tags:[]` ×11, `tags:["blog"]` ×2, `tags:["guides"]` ×2.
 
-### 24-hour follow-up (pending, window opens 2026-11-10T14:45Z)
+### Post-merge production deploy and namespace re-baseline (2026-11-09T16:12Z)
 
-**The 24 h window has not elapsed. NO 24-hour measurement is claimed.** Deploy t₀ = **2026-11-09T14:45:11Z**. A follow-up session after **2026-11-10T14:45Z** must re-run the four checks below and compare against the baselines in this section. Precedent: `openspec/changes/archive/2026-11-02-fix-opennext-adapter-cache-regression/verification.md` § “PENDING (24–48 h)”.
+The change was merged to master (PR #162, merge commit `68429da3`) and the post-merge production deploy ran from master HEAD.
+
+| Item | Value |
+|---|---|
+| Production deploy run | `42652029033` (`Deploy Production`, `master`, `68429da3`, `confirm_deploy=yes`) — success, 16:10:19Z |
+| Rollback availability job | success (no rollback executed) |
+| Runtime delta vs the earlier live build | **none** — `git diff b984aa96..68429da3 -- apps/ packages/` is empty; only the archive move, three spec updates, and the ARCHITECTURE.md/guardrails edits differ |
+| Health after deploy | `api.rajahinta.fi/api/v1/health` 200, `/api/v1/health/ready` 200, `rajahinta.fi/` 200, `rajahinta.fi/en` 200 |
+| Live cache namespace | **`incremental-cache/o1CU5Tx75fTT0JYN8ETai/`** (new build id) |
+| Namespace opened | 2026-11-09T16:12:16Z — 127 objects / 19 `.fetch` in the first two minutes |
+| Per-URL `.fetch` shape (16:14Z) | blog/posts `?locale=fi` 3, `?locale=en` 3, guides `?locale=fi` 3, `?locale=en` 3 — the same 2–3 fetch-option shapes per URL |
+| Tag census (19 `.fetch` bodies) | `tags:[]` ×11, `tags:null` ×4, `tags:["blog"]` ×2, `tags:["guides"]` ×2 |
+| 40-render burst (16:15–16:16Z) | 181 origin requests logged, **0** for `/api/v1/blog/posts`, **0** for `/api/v1/guides`; 181 unique UUID request IDs assigned by the API Worker |
+| Freshness | `/tuotteet` rendered 24 articles; 1,29 € / 32,90 € / 99,96 € matching live API 129 / 3290 / 9996 ¢ |
+| Lifecycle | `expire-30d` still present on `rajahinta-frontend-cache-production` (30-day expiration, all prefixes) |
+
+The new namespace reproduces the fixed behaviour on the merged build: the per-URL key counts stay at 3 each, and a 40-render burst produces zero blog/guides origin requests.
+
+### 24-hour follow-up (pending, window opens 2026-11-10T16:12Z)
+
+**The 24 h window has not elapsed. NO 24-hour measurement is claimed.** Deploy t₀ = **2026-11-09T16:12:16Z** (post-merge production deploy, run `42652029033`, master HEAD `68429da3`). A follow-up session after **2026-11-10T16:12Z** must re-run the four checks below and compare against the baselines in this section. Precedent: `openspec/changes/archive/2026-11-02-fix-opennext-adapter-cache-regression/verification.md` § “PENDING (24–48 h)”.
+
+> **Namespace re-baseline (2026-11-09T16:14Z).** The post-merge deploy from master HEAD minted a NEW Next build id, so the live cache namespace moved from `incremental-cache/o1CU5Tx75fTT0JYN8ETai/` (the pre-merge feature-branch build) to **`incremental-cache/o1CU5Tx75fTT0JYN8ETai/`**. Every command and namespace reference below points at the NEW namespace. The old namespace is frozen (no further writes) and will age out under `expire-30d`. The runtime code is identical between the two builds (`git diff b984aa96..68429da3 -- apps/ packages/` is empty: only the archive move, the three spec updates, and the ARCHITECTURE.md/guardrails edits differ), so the pre-merge measurements above remain valid evidence for the same runtime — but they are NOT a 24-hour measurement of the new namespace. The new namespace opened at **2026-11-09T16:12:16Z** with 127 objects / 19 `.fetch` in its first two minutes; the 24-hour count must start from that t₀.
 
 Re-run commands (dev worker already at `.opencode/.tmp/r2prod/`; restart it if it is not answering on `127.0.0.1:8796`):
 
@@ -401,13 +423,13 @@ CLOUDFLARE_API_TOKEN="$(cat /root/.cloudflare-token)" \
   setsid nohup npx wrangler dev --remote --port 8796 --ip 127.0.0.1 --log-level error \
   > dev.log 2>&1 < /dev/null &
 sleep 50
-curl -s -A "curl/8.18.0" "http://127.0.0.1:8796/?prefix=incremental-cache/0tFvUE63ML6ljsBMGi8Ux/&limit=1000"
+curl -s -A "curl/8.18.0" "http://127.0.0.1:8796/?prefix=incremental-cache/o1CU5Tx75fTT0JYN8ETai/&limit=1000"
 
 # 1. live-namespace listing (complete prefix; do NOT census the whole bucket)
 #    paginate with cursor if truncated; count .fetch and total
 # 2. per-URL breakdown
 curl -s -A "curl/8.18.0" \
-  "http://127.0.0.1:8796/?prefix=incremental-cache/0tFvUE63ML6ljsBMGi8Ux/&limit=1000&bodies=1"
+  "http://127.0.0.1:8796/?prefix=incremental-cache/o1CU5Tx75fTT0JYN8ETai/&limit=1000&bodies=1"
 
 # 3. burst + tail
 cd /var/www/code.webuilder.dev/rajahinta-fi/apps/frontend
@@ -438,14 +460,14 @@ Helper scripts from this session (may still exist): `.opencode/.tmp/task42/live_
 
 - Pre-fix live-namespace `.fetch`: **23,133/day** (964/h) in `tAlbcB9w6O0zY9sZK02ZT`.
 - Bucket-wide mean: **~35k objects/day** (lead census; do not repeat).
-- Immediate post-fix live namespace at 15:29Z: **32 `.fetch` / 460 objects**, ~44 `.fetch`/h, ~1,045/day extrapolated.
-- Per-URL blog/guides keys: **3 / 3 / 3 / 3**.
-- Burst origin blog/guides: **0 / 0**.
+- Immediate post-fix live namespace at 15:29Z (pre-merge build `0tFvUE63ML6ljsBMGi8Ux/`): **32 `.fetch` / 460 objects**, ~44 `.fetch`/h, ~1,045/day extrapolated.
+- **t₀ baseline for the 24 h window — the live namespace `incremental-cache/o1CU5Tx75fTT0JYN8ETai/` at 16:14Z: 19 `.fetch` / 127 objects, first two minutes of the new build.** Per-URL blog/guides keys: **3 / 3 / 3 / 3**. Tag census: `tags:[]` ×11, `tags:null` ×4, `tags:["blog"]` ×2, `tags:["guides"]` ×2.
+- Burst origin blog/guides: **0 / 0** (40 renders, 181 origin requests on other paths).
 - Freshness: 1,29 € / 32,90 € / 99,96 € matching 129 / 3290 / 9996 ¢.
 
 **A 24 h PASS looks like:**
 
-- Live namespace `incremental-cache/0tFvUE63ML6ljsBMGi8Ux/` `.fetch` count over the full 24 h is in the **low hundreds** (not the ~23k the pre-fix namespace wrote in the same span). Order-of-magnitude cut, not a single-digit count (ISR revalidations and the 900 s footer window will still write).
+- Live namespace `incremental-cache/o1CU5Tx75fTT0JYN8ETai/` `.fetch` count over the full 24 h is in the **low hundreds** (not the ~23k the pre-fix namespace wrote in the same span). Order-of-magnitude cut, not a single-digit count (ISR revalidations and the 900 s footer window will still write).
 - Per-URL blog/guides key counts are still **~2–3 each** (the `tags:["blog"]` / `["guides"]` / `[]` / `null` shapes). A count that grows with render volume is a FAIL.
 - Repeat-burst origin counts for `/api/v1/blog/posts` and `/api/v1/guides` are still **0** (or, if the 900 s window has just expired, **one** request per (path, locale), not one per render).
 - Freshness spot-check on ids 19, 1, 3550 still matches the live API.
