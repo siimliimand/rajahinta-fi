@@ -1,6 +1,6 @@
 # Frontend on Cloudflare Workers (OpenNext)
 
-The Next.js 15 frontend runs on Cloudflare Workers via
+The Next.js 16 frontend (16.4.3) runs on Cloudflare Workers via
 [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare)
 (migrate-to-cloudflare task 5.1). This is the runbook: local build, local
 Workers preview, deploy, and how per-PR preview URLs behave.
@@ -16,10 +16,23 @@ Workers preview, deploy, and how per-PR preview URLs behave.
 
 ### Caching choices (why)
 
-The app uses **time-based ISR only**: `revalidate = 60` on the `[locale]`
-layout, `revalidate = 900` on `sitemap.ts`, and `next: { revalidate }`
-data-cache fetches (60/900) in `src/lib/api.ts`. That requires an
-incremental cache plus a revalidation queue. Chosen:
+The app uses **time-based ISR plus tagged data-cache fetches**. Verified
+windows against the route modules (Next 16.4.3):
+
+| Surface | Window | Source |
+|---|---|---|
+| Localized tree ISR | `revalidate = 60` | `src/app/[locale]/layout.tsx` |
+| Product detail ISR (and OG images) | `revalidate = 300` | `src/app/[locale]/products/[id]/page.tsx`, `src/app/tuotteet/[id]/page.tsx` |
+| Sitemap index and tree routes | `revalidate = 900` | `src/app/sitemap.xml/route.ts`, `src/app/sitemaps/[tree]/route.ts` |
+| Data-cache API fetches | `next: { revalidate: 900 }` | blog/guides server modules, `src/lib/server-api.ts`, `src/lib/sitemap-entries.ts` |
+
+The old `app/sitemap.ts` metadata route is gone (sitemap-tree-coverage):
+`/sitemap.xml` is a hand-rolled sitemapindex over `/sitemaps/<tree>` Route
+Handlers. There is no `revalidate: 60` data-cache fetch; 60 s is only the
+`[locale]` layout ISR window. Product pages use on-demand ISR
+(`dynamicParams = true`, empty `generateStaticParams`).
+
+That still requires an incremental cache plus a revalidation queue. Chosen:
 
 - **R2 incremental cache** (`NEXT_INC_CACHE_R2_BUCKET`) — KV is eventually
   consistent (adapter docs discourage it), static-assets cache is
@@ -32,7 +45,49 @@ incremental cache plus a revalidation queue. Chosen:
   site's scale the trade-off is a few duplicate revalidations per ISR
   window. The upgrade path (DO queue + what it costs) is documented in
   `open-next.config.ts`.
-- **No tag cache** — the app never calls `revalidateTag`/`revalidatePath`.
+- **Tag cache: called, not deployed.** `src/app/api/internal/revalidate/route.ts`
+  calls `revalidateTag(tag, 'max')` for the allowlisted tags `guides` and
+  `blog` (Next 16 requires a cache profile; `'max'` marks every entry for
+  the tag stale). The API Worker's ops-console publish transition invokes
+  that endpoint after a successful blog-post publish
+  (`apps/api-worker/src/routes/ops.routes.ts`). `wrangler.jsonc` declares
+  **no** `NEXT_TAG_CACHE_*` binding, and `open-next.config.ts` does not
+  pass a `tagCache` override, so the adapter binds its dummy tag cache
+  (`writeTags` is a no-op, `getByTag` returns `[]`, `isStale` returns
+  `false`). On-demand tag revalidation therefore has no persistent store
+  on the deployed Worker today; the 60/300/900 s ISR windows remain the
+  effective freshness mechanism. Adding `d1NextTagCache` (or
+  `doShardedTagCache` at higher load) plus the matching
+  `NEXT_TAG_CACHE_*` binding is the upgrade path, not a current fact.
+
+### Stable cache-key invariant (data-cache fetches)
+
+Next's `generateCacheKey` hashes the fetch URL, method, and headers. It
+strips `traceparent` and `tracestate` and keeps every other header,
+including `x-request-id`. A UUID minted per render therefore minted a
+distinct cache key, a distinct R2 `.fetch` object, and an origin request
+per render. The production cache bucket held 152,987 `.fetch` objects
+(213,769 total) on 2026-11-09; a 454-entry sample contained 11 distinct
+URLs. The shared `SiteFooter` fetches the blog and guides indexes on
+every localized render, which multiplied the defect.
+
+Invariant: on a positive-revalidate read, no per-request-varying header
+may enter the fetch cache key. Generated correlation metadata must not
+vary per render.
+
+What the fix does (`src/lib/api.ts`, `apiFetch`): for `next.revalidate >
+0`, the generated `traceparent` is kept (Next strips it from the key) and
+the generated `x-request-id` is omitted. Explicit caller-supplied IDs
+pass through, and requests without a positive revalidation window keep
+the generated UUID.
+
+What the API Worker does instead: on an actual miss that arrives without
+a valid `x-request-id`, `apps/api-worker/src/middleware/request-id.ts`
+generates a UUID, echoes it in the response header, and stamps it on the
+structured request log. A cache hit has no origin request and needs no
+request ID. The `API_WORKER` service-binding path (`serverRequest`) is
+unchanged: it bypasses Next's fetch cache, so cache-key fragmentation
+does not apply there.
 
 ## Scripts
 
@@ -179,11 +234,14 @@ are unaffected. Wire the CORS middleware on the API Worker before task
 
 Every request through the fetch client carries a W3C `traceparent`
 (caller-supplied values pass through verbatim; otherwise a standalone
-`00-<trace-id>-<span-id>-01` is generated per request) and a UUID
-`x-request-id` (echoed by the API and surfaced on `ApiFetchError`).
-Server routes that want a full browser→frontend→API waterfall can
-forward the inbound request's `traceparent`/`tracestate` headers into
-the request init.
+`00-<trace-id>-<span-id>-01` is generated per request). A UUID
+`x-request-id` (echoed by the API and surfaced on `ApiFetchError`) is
+sent on non-cacheable requests and when the caller supplies one;
+positive-revalidate reads omit the generated ID so the fetch cache key
+stays stable (see the stable cache-key invariant). On a cache miss the
+API Worker assigns the UUID, echoes it, and logs it. Server routes that
+want a full browser→frontend→API waterfall can forward the inbound
+request's `traceparent`/`tracestate` headers into the request init.
 
 ## Per-PR preview URLs (wired by task 6.5)
 
@@ -216,6 +274,46 @@ Constraints to keep in mind (Cloudflare preview-URL limitations):
   attached in task 6.5).
 - Preview URLs are public; put Cloudflare Access in front of them if PR
   previews must not be world-readable.
+
+## Cache-bucket lifecycle (30-day expiration)
+
+The staging and production frontend cache buckets carry a 30-day
+object-expiration rule (change `fix-r2-fetch-cache-key-explosion`, design
+D4). The rule ages out build-scoped ISR entries and the historical
+`.fetch` duplicates. No bulk deletion is performed. An expired entry
+regenerates from source on the next request. Observation logs, rate
+snapshots, and D1 records are different stores and are unaffected. The
+dev bucket (`rajahinta-frontend-cache-dev`) is out of scope.
+
+Both buckets are EU-jurisdiction (`wrangler.jsonc`:
+`"jurisdiction": "eu"`), so every lifecycle command must pass
+`--jurisdiction eu` (short form `-J eu`). The commands target the bucket
+by name; `--env` is not how the bucket is selected.
+
+```bash
+# From apps/frontend (the frontend's own Wrangler).
+
+# List rules
+npx wrangler r2 bucket lifecycle list rajahinta-frontend-cache-staging --jurisdiction eu
+npx wrangler r2 bucket lifecycle list rajahinta-frontend-cache-production --jurisdiction eu
+
+# Add the 30-day object-expiration rule (prefix omitted: all objects)
+npx wrangler r2 bucket lifecycle add rajahinta-frontend-cache-staging expire-30d --expire-days 30 --jurisdiction eu
+npx wrangler r2 bucket lifecycle add rajahinta-frontend-cache-production expire-30d --expire-days 30 --jurisdiction eu
+
+# Remove the rule itself (not required during a Worker rollback)
+npx wrangler r2 bucket lifecycle remove rajahinta-frontend-cache-staging --name expire-30d --jurisdiction eu
+npx wrangler r2 bucket lifecycle remove rajahinta-frontend-cache-production --name expire-30d --jurisdiction eu
+```
+
+`lifecycle set <bucket> --file <json>` replaces the whole configuration
+from a JSON file; `lifecycle add` appends one named rule. `add` also
+accepts `--ia-transition-days` and `--abort-multipart-days`; both are
+unused here.
+
+Rollback: a frontend Worker rollback does not touch the lifecycle rule.
+The rule may stay during a rollback because it only expires regenerable
+cache objects.
 
 ## Known deviations from the adapter defaults
 

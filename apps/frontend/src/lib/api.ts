@@ -303,6 +303,16 @@ export function buildTraceparent(): string {
 const TRACEPARENT_PATTERN = /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/;
 
 /**
+ * Whether the init carries a positive Next `next.revalidate` window —
+ * the only shape that enters Next's fetch data cache. `false`, `0`,
+ * `undefined`, and tag-only configs are not positive.
+ */
+function hasPositiveRevalidate(init?: RequestInit): boolean {
+  const revalidate = init?.next?.revalidate;
+  return typeof revalidate === 'number' && revalidate > 0;
+}
+
+/**
  * Merge the W3C trace-context and request-ID headers onto an outbound
  * API request: caller-supplied values pass through verbatim (server
  * routes can forward the inbound request's headers for full
@@ -310,8 +320,18 @@ const TRACEPARENT_PATTERN = /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/;
  * `traceparent` and a UUID `x-request-id` (the API echoes it, UUID-only)
  * are generated per request. Existing header casing is preserved — only
  * the trace keys are matched case-insensitively.
+ *
+ * `omitGeneratedRequestId` leaves an absent `x-request-id` absent
+ * instead of minting a UUID. `apiFetch` sets it for positive-revalidate
+ * reads because Next's fetch-cache key keeps `x-request-id` (it strips
+ * only `traceparent`/`tracestate`); a generated UUID would otherwise
+ * mint a distinct cache key per render. The service-binding path does
+ * not use this option — it bypasses Next's fetch cache.
  */
-export function withTraceHeaders(existing?: HeadersInit): Record<string, string> {
+export function withTraceHeaders(
+  existing?: HeadersInit,
+  options?: { omitGeneratedRequestId?: boolean },
+): Record<string, string> {
   const headers: Record<string, string> = {
     ...Object.fromEntries(
       Object.entries(existing ?? {}).map(([k, v]) => [k, String(v)]),
@@ -326,7 +346,10 @@ export function withTraceHeaders(existing?: HeadersInit): Record<string, string>
 
   const requestIdKey =
     Object.keys(headers).find((k) => k.toLowerCase() === 'x-request-id') ?? 'x-request-id';
-  if (headers[requestIdKey] === undefined || headers[requestIdKey] === '') {
+  if (
+    !options?.omitGeneratedRequestId &&
+    (headers[requestIdKey] === undefined || headers[requestIdKey] === '')
+  ) {
     headers[requestIdKey] = crypto.randomUUID();
   }
 
@@ -364,12 +387,18 @@ export function buildHeaders(path: string, init?: RequestInit): Record<string, s
  * adds credentials and error translation on top; the operator-console
  * client (`app/[locale]/ops/api.ts`) uses it directly with its bearer
  * auth, so ops calls carry the same trace context.
+ *
+ * Positive-revalidate reads keep the generated `traceparent` but omit
+ * the generated `x-request-id` so Next's fetch-cache key stays stable
+ * across renders (the API Worker assigns a UUID on an actual miss).
  */
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const url = `${BASE_URL}${path}`;
   return fetch(url, {
     ...init,
-    headers: withTraceHeaders(init?.headers),
+    headers: withTraceHeaders(init?.headers, {
+      omitGeneratedRequestId: hasPositiveRevalidate(init),
+    }),
   });
 }
 

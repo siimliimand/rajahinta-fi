@@ -19,6 +19,12 @@
  *      TypeError→network, with `unknown` as the honest residual for
  *      out-of-taxonomy statuses; transport classes carry status 0, and a
  *      classified non-2xx error still echoes the API's `x-request-id`.
+ *   7. Cache-aware request IDs (fix-r2-fetch-cache-key-explosion D1):
+ *      a positive `next.revalidate` keeps the generated `traceparent`
+ *      but omits the generated `x-request-id` so Next's fetch-cache key
+ *      stays stable; explicit caller IDs and non-cacheable requests
+ *      (no `next`, `revalidate: false | 0`, tags-only) keep today's
+ *      UUID behavior.
  *
  * @module ApiFetchClientTest
  */
@@ -27,6 +33,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   ApiFetchError,
+  apiFetch,
   buildTraceparent,
   request,
   resolveApiBaseUrl,
@@ -57,6 +64,14 @@ function lastCalls(): FetchCall[] {
 
 const TRACEPARENT_RE = /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Fail unless no request-id header (any casing) is present at all. */
+function expectNoRequestId(headers: Record<string, string>): void {
+  const keys = Object.keys(headers).filter(
+    (k) => k.toLowerCase() === 'x-request-id',
+  );
+  expect(keys).toEqual([]);
+}
 
 // ---------------------------------------------------------------------------
 
@@ -137,6 +152,23 @@ describe('trace-context headers (task 6.2 note)', () => {
     const headers = withTraceHeaders({ 'x-request-id': '' });
     expect(headers['x-request-id']).toMatch(UUID_RE);
   });
+
+  it('omits the generated request id only when that option is set', () => {
+    const omitted = withTraceHeaders(undefined, { omitGeneratedRequestId: true });
+    expectNoRequestId(omitted);
+    expect(omitted['traceparent']).toMatch(TRACEPARENT_RE);
+
+    // Default (no options) stays the service-binding / non-cacheable shape.
+    const defaulted = withTraceHeaders();
+    expect(defaulted['x-request-id']).toMatch(UUID_RE);
+
+    // An explicit id survives the omit option verbatim, any casing.
+    const explicit = withTraceHeaders(
+      { 'X-Request-Id': '11111111-2222-4333-8444-555555555555' },
+      { omitGeneratedRequestId: true },
+    );
+    expect(explicit['X-Request-Id']).toBe('11111111-2222-4333-8444-555555555555');
+  });
 });
 
 describe('request() outbound contract', () => {
@@ -213,6 +245,83 @@ describe('request() outbound contract', () => {
 
     expect(err).toBeInstanceOf(ApiFetchError);
     expect((err as ApiFetchError).requestId).toBeNull();
+  });
+});
+
+/**
+ * fix-r2-fetch-cache-key-explosion D1: Next's `generateCacheKey` strips
+ * `traceparent`/`tracestate` but keeps `x-request-id`, so a generated
+ * UUID on a positive-revalidate read minted a distinct cache key per
+ * render. Those reads still carry `traceparent`; explicit IDs and every
+ * non-cacheable shape keep the pre-fix UUID behavior.
+ */
+describe('cacheable-fetch request id (fix-r2-fetch-cache-key-explosion D1)', () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('omits generated x-request-id on a positive revalidate and still sends traceparent', async () => {
+    await request('/api/v1/blog', { next: { revalidate: 900 } });
+
+    const headers = lastCalls()[0][1].headers as Record<string, string>;
+    expect(headers['traceparent']).toMatch(TRACEPARENT_RE);
+    expectNoRequestId(headers);
+  });
+
+  it('preserves an explicit caller x-request-id on a cacheable read', async () => {
+    await request('/api/v1/blog', {
+      headers: { 'x-request-id': '11111111-2222-4333-8444-555555555555' },
+      next: { revalidate: 900 },
+    });
+
+    const headers = lastCalls()[0][1].headers as Record<string, string>;
+    expect(headers['x-request-id']).toBe('11111111-2222-4333-8444-555555555555');
+  });
+
+  it('preserves an explicit mixed-case request id through apiFetch on a cacheable read', async () => {
+    // request() lowercases caller headers (buildHeaders); apiFetch is the
+    // path that must keep the caller's original casing.
+    await apiFetch('/api/v1/blog', {
+      headers: { 'X-Request-Id': '11111111-2222-4333-8444-555555555555' },
+      next: { revalidate: 900 },
+    });
+
+    const headers = lastCalls()[0][1].headers as Record<string, string>;
+    expect(headers['X-Request-Id']).toBe('11111111-2222-4333-8444-555555555555');
+    // Exactly one request-id header: the caller's, not a generated UUID.
+    expect(
+      Object.keys(headers).filter((k) => k.toLowerCase() === 'x-request-id'),
+    ).toEqual(['X-Request-Id']);
+  });
+
+  it.each([
+    ['no next option', undefined],
+    ['revalidate false', { revalidate: false as const }],
+    ['revalidate 0', { revalidate: 0 }],
+    ['tags only', { tags: ['blog'] }],
+  ])('still sends a UUID request id for %s', async (_label, next) => {
+    await request('/api/v1/products?q=karhu', next === undefined ? {} : { next });
+
+    const headers = lastCalls()[0][1].headers as Record<string, string>;
+    expect(headers['traceparent']).toMatch(TRACEPARENT_RE);
+    expect(headers['x-request-id']).toMatch(UUID_RE);
+  });
+
+  it('forwards a caller traceparent verbatim on a cacheable read', async () => {
+    const inbound =
+      '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+    await request('/api/v1/blog', {
+      headers: { traceparent: inbound },
+      next: { revalidate: 900 },
+    });
+
+    const headers = lastCalls()[0][1].headers as Record<string, string>;
+    expect(headers['traceparent']).toBe(inbound);
+    expectNoRequestId(headers);
   });
 });
 
