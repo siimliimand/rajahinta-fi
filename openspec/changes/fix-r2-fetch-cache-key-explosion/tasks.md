@@ -8,12 +8,12 @@
 
 ## 2. Local verification
 
-- [ ] 2.1 Run focused cache tests, full frontend Vitest, typecheck, eslint, and OpenNext production build; verify all pass and route cache classification remains unchanged. <!-- agent: platform-engineer.fast, depends_on: [1.1, 1.2, 1.3], touches: [] -->
+- [x] 2.1 Run focused cache tests, full frontend Vitest, typecheck, eslint, and OpenNext production build; verify all pass and route cache classification remains unchanged. <!-- agent: platform-engineer.fast, depends_on: [1.1, 1.2, 1.3], touches: [] -->
 
 ## 3. Staging validation
 
-- [ ] 3.1 Apply and verify the 30-day lifecycle rule on `rajahinta-frontend-cache-staging`, deploy staging through the normal pipeline, and verify Worker health plus lifecycle configuration. <!-- agent: devops-engineer.fast, depends_on: [2.1], touches: [] -->
-- [ ] 3.2 Run the staging cache matrix: repeated localized renders within 900 s create no new blog/guide `.fetch` keys; revalidation reuses keys; footer links and publish behavior stay correct; API origin logs carry UUID and trace context. Record evidence in `verification.md`. <!-- agent: devops-engineer.fast, depends_on: [3.1], touches: [openspec/changes/fix-r2-fetch-cache-key-explosion/verification.md] -->
+- [x] 3.1 Apply and verify the 30-day lifecycle rule on `rajahinta-frontend-cache-staging`, deploy staging through the normal pipeline, and verify Worker health plus lifecycle configuration. <!-- agent: devops-engineer.fast, depends_on: [2.1], touches: [] -->
+- [x] 3.2 Run the staging cache matrix: repeated localized renders within 900 s create no new blog/guide `.fetch` keys; revalidation reuses keys; footer links and publish behavior stay correct; API origin logs carry UUID and trace context. Record evidence in `verification.md`. <!-- agent: devops-engineer.fast, depends_on: [3.1], touches: [openspec/changes/fix-r2-fetch-cache-key-explosion/verification.md] -->
 
 ## 4. Production rollout
 
