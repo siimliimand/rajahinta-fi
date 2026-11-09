@@ -206,3 +206,278 @@ That is the documented visibility rule (hide the link when the index read is una
 - Cloudflare token was used inline via `$(cat /root/.cloudflare-token)` and was never printed.
 - Measurement timestamps (UTC): sample A 14:24Z; burst 14:26:36–14:26:48Z and 14:28:18–14:28:34Z; ISR-expired renders 14:30:07Z; live-build group 14:32Z; post-900 s renders 14:40:20–14:40:37Z; sample C 14:41Z.
 
+## Task 4.1 — production lifecycle rule and gated deploy (2026-11-09)
+
+### Gate confirmed before any production action
+
+Task 3.2 was read first. Nothing in that evidence contradicted “staging is green”:
+
+- Staging deploy run `42632988169` (Deploy Staging on `feature/fix-r2-fetch-cache-key-explosion`) — **success**.
+- Staging lifecycle rule `expire-30d` present on `rajahinta-frontend-cache-staging` (EU).
+- ~40 localized re-renders inside 900 s: **0** origin requests for `/api/v1/blog/posts` and `/api/v1/guides`, **0** new `.fetch` keys.
+- After the window the same keys were refreshed in place (0 added, 0 removed).
+- On the origin misses the API Worker assigned a UUID `requestId`, inbound `traceparent` was present, inbound `x-request-id` was absent.
+
+Production was only dispatched after that confirmation. Local `main`-side verification from the lead session (154 test files / 1918 tests, typecheck, eslint, OpenNext build) was taken as given and not re-run.
+
+### Production lifecycle configuration — `rajahinta-frontend-cache-production` (EU)
+
+Rule added via the frontend’s own Wrangler 4.152.0 (`apps/frontend/node_modules`), token used inline and never printed:
+
+```
+cd apps/frontend
+npx wrangler r2 bucket lifecycle add rajahinta-frontend-cache-production expire-30d --expire-days 30 --jurisdiction eu
+```
+
+Non-interactive fallback accepted the all-prefixes confirmation (same as task 3.1). Added 2026-11-09T14:43:03–14:43:06Z.
+
+`npx wrangler r2 bucket lifecycle list rajahinta-frontend-cache-production --jurisdiction eu` at 2026-11-09T14:43:08Z:
+
+```
+name:     Default Multipart Abort Rule
+enabled:  Yes
+prefix:   (all prefixes)
+action:   Abort incomplete multipart uploads after 7 days
+
+name:     expire-30d
+enabled:  Yes
+prefix:   (all prefixes)
+action:   Expire objects after 30 days
+```
+
+Both rules present. `expire-30d` expires objects after 30 days from upload, all prefixes, EU jurisdiction. The pre-existing ~213,769 production cache objects (~152,987 of them `.fetch`) were **not** listed, read, rewritten, or deleted; they age out under the rule and regenerate from source on the next request. **NO BULK DELETION was performed.**
+
+### Gated production deploy
+
+Workflow `Deploy Production` (`deploy-production.yml`) dispatched on the feature branch (established repo pattern for a pre-merge change; previous example run `41415070153` on `feature/fix-opennext-adapter-cache-regression`).
+
+- Run ID: `42637429328`
+- URL: https://github.com/siimliimand/rajahinta-fi/actions/runs/42637429328
+- Branch: `feature/fix-r2-fetch-cache-key-explosion`
+- Event: `workflow_dispatch`
+- `confirm_deploy` input: `yes`
+- Created: 2026-11-09T14:43:15Z
+- Updated (completed): 2026-11-09T14:45:40Z (~2m25s)
+- Conclusion: **success**
+
+Per-step outcome (deploy job `Production deploy (gated, migrate → deploy)`):
+
+| Step | Outcome |
+|---|---|
+| Require confirmation | skipped (correct: the gate step only runs when `confirm_deploy != 'yes'`) |
+| checkout / pnpm / node / install | success |
+| Apply D1 migrations (production) | success |
+| Deploy API Worker (production) | success |
+| Deploy email Worker (production) | success |
+| Build frontend (OpenNext) | success |
+| Deploy frontend Worker (production) | success |
+| Health gate — production readiness | success |
+
+Rollback job `Rollback availability (wrangler rollback)`: **success** (2026-11-09T14:45:36–14:45:40Z). No rollback was executed.
+
+### Post-deploy health and headers
+
+| Target | URL | UTC | Status | Notable headers / body |
+|---|---|---|---|---|
+| Production API health | `https://api.rajahinta.fi/api/v1/health` | 14:45:51Z | **200** | `{"status":"ok",...}` |
+| Production API ready | `https://api.rajahinta.fi/api/v1/health/ready` | 14:45:52Z | **200** | `{"status":"ok","checks":{"d1":{"status":"up",...},"durableObjects":{"status":"up",...}}}` |
+| Production frontend `/` | `https://rajahinta.fi/` | 14:45:51Z | **200** | `cache-control: s-maxage=16, stale-while-revalidate=2592000`; `x-nextjs-cache: HIT`; `x-nextjs-prerender: 1,1` |
+| Production frontend `/en` | `https://rajahinta.fi/en` | 14:45:58Z | **200** | `cache-control: s-maxage=14, stale-while-revalidate=2592000`; `x-nextjs-cache: HIT`; `x-nextjs-prerender: 1,1` |
+| Localized product listing | `https://rajahinta.fi/tuotteet` | 14:45:52Z / 14:46:16Z | **200** | `cache-control: private, no-cache, no-store, max-age=0, must-revalidate`; `x-nextjs-cache` / `x-nextjs-prerender` **not present**; HTML 218,483 bytes |
+
+### Product-page render check — `/tuotteet`
+
+**PASS.** 24 `<article class="rounded-lg border …">` product cards, each linking to `/tuotteet/{id}` with server-rendered product titles (examples: Hendrick’s Another Gin 41,4% 700ml → `/tuotteet/19`; L’Oratoire des Papes Chateauneuf Du Pape Rouge 15% 0.75 l → `/tuotteet/1`; Crystal Head Vodka 40,0% 1,75L → `/tuotteet/3550`). This is live catalog content, not a degraded ISR bake.
+
+### Rollback availability
+
+The deploy job versioned the previous Worker scripts. The prior deployment of each Worker remains instantly restorable. **No rollback was run.** Commands (from the repo root; the workflow’s rollback job printed the same runbook):
+
+```
+pnpm --filter @rajahinta/api-worker     exec wrangler rollback --env production
+pnpm --filter @rajahinta/email-worker   exec wrangler rollback --env production
+pnpm --filter @rajahinta/frontend       exec wrangler rollback --env production
+```
+
+The R2 lifecycle rule is **not** touched by a Worker rollback: `wrangler rollback` restores the previous Worker script and its bindings, not bucket lifecycle configuration. `expire-30d` may stay in place during a rollback — it only expires regenerable cache objects.
+
+### Operational notes
+
+- **No R2 object was deleted**, in any bucket, in any way. No bucket purge, no bulk deletion, no object write or read by this task. Existing production cache objects age out under `expire-30d`.
+- No source file was modified. Only this section was appended to `verification.md`.
+- Nothing was committed to git (lead session commits).
+- Cloudflare token was used inline via `$(cat /root/.cloudflare-token)` and was never printed, copied, or logged.
+- `deploy-production.yml` was not modified; the confirmation gate was not bypassed.
+- Measurement timestamps (UTC): lifecycle add 14:43:03–14:43:06Z; lifecycle list 14:43:08Z; dispatch 14:43:14Z; run 14:43:15–14:45:40Z; API health 14:45:51Z; API ready 14:45:52Z; `/` 14:45:51Z; `/en` 14:45:58Z; `/tuotteet` 14:45:52Z and 14:46:16Z.
+- 24-hour PutObject / duplicate-key follow-up is task 4.2 and was **not** started.
+
+## Task 4.2 — production verification, immediate portion (2026-11-09)
+
+Deploy under test: production Workers from workflow run `42637429328` (this branch), frontend `rajahinta-frontend-production`, API `rajahinta-api-production`, bucket `rajahinta-frontend-cache-production` (EU). Live frontend deployment from **2026-11-09T14:45:11Z**. Live cache namespace: `incremental-cache/0tFvUE63ML6ljsBMGi8Ux/`.
+
+The 24 h window has **not** elapsed. Everything below is the immediate portion (~14:45–15:30Z, under one hour post-deploy). No 24-hour measurement is claimed. See the pending subsection at the end.
+
+### Immediate results
+
+| Metric | Measurement | Source | Verdict |
+|---|---|---|---|
+| Pre-fix `.fetch` write rate (live-then namespace `tAlbcB9w6O0zY9sZK02ZT`, 24 h before deploy) | **23,133** `.fetch` / 33,961 objects → **964 `.fetch`/h ≈ 23,133/day** | Lead-session bounded scan of that namespace (not re-run; billable) | baseline |
+| Bucket-wide daily objects, trailing weeks | **8,401–59,462**, mean **~35k/day** (31 build namespaces, 1,853 ListObjects) | Lead-session census — **not re-run** | baseline (see caveat below) |
+| Post-fix `.fetch` rate at 15:24Z (lead) | 32 `.fetch` / 449 objects in ~0.6 h ≈ **49/h ≈ 1,280/day** | Lead-session live-namespace listing | **PASS** (~18× vs 23k/day; ~27× vs 35k/day) |
+| Post-fix `.fetch` rate at 15:29Z (independent re-read) | **32 `.fetch` / 460 objects** over 0.735 h ≈ **44/h ≈ 1,045/day**; **0 new `.fetch` keys** vs the 15:24Z snapshot | This session, one complete prefix listing (`truncated: false`) | **PASS** (~22× vs 23k/day; ~33× vs 35k/day) |
+| Per-URL blog/guides `.fetch` keys (post-fix namespace, 15:27Z) | `/api/v1/blog/posts?locale=fi` **3**, `?locale=en` **3**, `/api/v1/guides?locale=fi` **3**, `?locale=en` **3** (plus one unrelated post-detail URL) | `bodies=1` on the live namespace (32 Class B `GET`s) | **PASS** — 2–3 fetch-option shapes per URL, not per-render growth |
+| Origin `/api/v1/blog/posts` and `/api/v1/guides` during a 20-render burst of `/` and `/en` | **0 and 0** | `wrangler tail rajahinta-api-production`, burst 15:28:27–15:29:06Z | **PASS** |
+| Content freshness `/tuotteet` vs live API (ids 19, 1, 3550) | 1,29 € = 129 ¢; 32,90 € = 3290 ¢; 99,96 € = 9996 ¢ | Rendered HTML vs `GET /api/v1/products/{id}` with `x-age-confirmed: server-prerender` | **PASS** |
+| Lifecycle `expire-30d` on `rajahinta-frontend-cache-production` (EU) | Still present, all prefixes, expire after 30 days; multipart-abort rule unchanged | `wrangler r2 bucket lifecycle list` | **PASS** |
+
+The ~35k/day bucket-wide baseline was measured by the lead session’s bounded census. **The live-namespace `.fetch` write rate is the metric that shows the change**; the bucket-wide total still contains the historical pre-fix duplicates and will not fall until `expire-30d` ages them out.
+
+### Independent re-verification (this session)
+
+The lead session’s immediate numbers were not re-derived from a new census. Four bounded checks were re-run.
+
+**1. Live-namespace re-read.** `incremental-cache/0tFvUE63ML6ljsBMGi8Ux/` (complete, one page, `truncated: false`):
+
+| Time (UTC) | objects | `.fetch` | notes |
+|---|---|---|---|
+| 15:24:39Z (lead snapshot) | 449 | 32 | lead session |
+| 15:27:18Z (re-read) | 452 | 32 | +3 objects, **+0 `.fetch` keys**; 1 existing `.fetch` overwritten in place (uploaded 14:46:01.011Z → 15:25:30.591Z) |
+| 15:29:19Z (after burst) | 460 | 32 | +11 objects vs lead, still **+0 `.fetch` keys**; `latest_fetch` still 15:25:30.591Z |
+
+Derived rate over the full post-deploy window (14:45:11 → 15:29:18, 0.735 h): 32 `.fetch` = **43.5/h**, extrapolated **~1,045/day**. Hourly split: 14:xx 19 `.fetch`, 15:xx 13 `.fetch`. Write rate is still tens-per-hour, not the hundreds the pre-fix namespace produced (1,045 `.fetch` in a single 15-minute bucket there).
+
+**2. Repeat-render burst.** 20 renders (10× `https://rajahinta.fi/`, 10× `/en`), all HTTP 200, 15:28:27–15:29:06Z, `wrangler tail rajahinta-api-production --format json` (no `--sampling-rate`).
+
+Origin paths observed: **`/api/v1/blog/posts` 0, `/api/v1/guides` 0**. The only logged origin traffic was the homepage’s `API_WORKER` binding reads of featured products:
+
+```
+/api/v1/products/2263            4
+/api/v1/products/2264            4
+/api/v1/products/2265            3
+/api/v1/products/2263/dupes      2
+/api/v1/products/2263/price-history  2
+/api/v1/products/2263/price-context  2
+/api/v1/products/2264/dupes      2
+/api/v1/products/2264/price-context  2
+/api/v1/products/2264/price-history  2
+```
+
+23 logged requests, 23 unique UUID `requestId`s. Every one of those binding reads carried an explicit `x-request-id` equal to the API’s echo and a W3C `traceparent` — the binding path is untouched, as designed. `savings/*` and `calendar/*` did not appear in this burst (data-cache hit; the lead session had already exercised them). Blog/guides reads went through `apiFetch` and were served from the data cache.
+
+**3. Freshness re-check.** `GET https://rajahinta.fi/tuotteet` at ~15:27Z: 24 server-rendered `<article>` cards. Same three ids as the lead session:
+
+| id | Rendered name | Rendered price | Live API (`x-age-confirmed: server-prerender`) | Match |
+|----|---------------|----------------|------------------------------------------------|-------|
+| 19 | Hendrick’s Another Gin 41,4% 700ml | **1,29 €** | `currentBestPriceCents: 129` = 1,29 € | ✅ |
+| 1 | L’Oratoire des Papes Chateauneuf Du Pape Rouge 15% 0.75 l | **32,90 €** | `currentBestPriceCents: 3290` = 32,90 € | ✅ |
+| 3550 | Crystal Head Vodka 40,0% 1,75L | **99,96 €** | `currentBestPriceCents: 9996` = 99,96 € | ✅ |
+
+**4. Lifecycle re-check.** `npx wrangler r2 bucket lifecycle list rajahinta-frontend-cache-production --jurisdiction eu` at ~15:27Z:
+
+```
+name:     Default Multipart Abort Rule
+enabled:  Yes
+prefix:   (all prefixes)
+action:   Abort incomplete multipart uploads after 7 days
+
+name:     expire-30d
+enabled:  Yes
+prefix:   (all prefixes)
+action:   Expire objects after 30 days
+```
+
+Per-URL `.fetch` shape in the live namespace (15:27Z) is the same 2–3 fetch-option shapes per blog/guides URL the lead session saw, not per-render growth. Tag census on those 32 `.fetch` bodies: `tags:null` ×17, `tags:[]` ×11, `tags:["blog"]` ×2, `tags:["guides"]` ×2.
+
+### 24-hour follow-up (pending, window opens 2026-11-10T14:45Z)
+
+**The 24 h window has not elapsed. NO 24-hour measurement is claimed.** Deploy t₀ = **2026-11-09T14:45:11Z**. A follow-up session after **2026-11-10T14:45Z** must re-run the four checks below and compare against the baselines in this section. Precedent: `openspec/changes/archive/2026-11-02-fix-opennext-adapter-cache-regression/verification.md` § “PENDING (24–48 h)”.
+
+Re-run commands (dev worker already at `.opencode/.tmp/r2prod/`; restart it if it is not answering on `127.0.0.1:8796`):
+
+```
+# 0. dev worker (skip if already answering)
+cd /var/www/code.webuilder.dev/rajahinta-fi/.opencode/.tmp/r2prod
+CLOUDFLARE_API_TOKEN="$(cat /root/.cloudflare-token)" \
+  setsid nohup npx wrangler dev --remote --port 8796 --ip 127.0.0.1 --log-level error \
+  > dev.log 2>&1 < /dev/null &
+sleep 50
+curl -s -A "curl/8.18.0" "http://127.0.0.1:8796/?prefix=incremental-cache/0tFvUE63ML6ljsBMGi8Ux/&limit=1000"
+
+# 1. live-namespace listing (complete prefix; do NOT census the whole bucket)
+#    paginate with cursor if truncated; count .fetch and total
+# 2. per-URL breakdown
+curl -s -A "curl/8.18.0" \
+  "http://127.0.0.1:8796/?prefix=incremental-cache/0tFvUE63ML6ljsBMGi8Ux/&limit=1000&bodies=1"
+
+# 3. burst + tail
+cd /var/www/code.webuilder.dev/rajahinta-fi/apps/frontend
+CLOUDFLARE_API_TOKEN="$(cat /root/.cloudflare-token)" \
+  setsid nohup npx wrangler tail rajahinta-api-production --format json \
+  > /tmp/prod-tail-24h.json 2>&1 < /dev/null &
+sleep 30
+# 20 renders of https://rajahinta.fi/ and /en, then:
+pkill -f "wrangler tail rajahinta-api-production"
+
+# 4. freshness
+curl -s -A "curl/8.18.0" https://rajahinta.fi/tuotteet
+curl -s -A "curl/8.18.0" -H "x-age-confirmed: server-prerender" \
+  https://api.rajahinta.fi/api/v1/products/19
+curl -s -A "curl/8.18.0" -H "x-age-confirmed: server-prerender" \
+  https://api.rajahinta.fi/api/v1/products/1
+curl -s -A "curl/8.18.0" -H "x-age-confirmed: server-prerender" \
+  https://api.rajahinta.fi/api/v1/products/3550
+
+# 5. lifecycle (read-only)
+cd apps/frontend && CLOUDFLARE_API_TOKEN="$(cat /root/.cloudflare-token)" \
+  npx wrangler r2 bucket lifecycle list rajahinta-frontend-cache-production --jurisdiction eu
+```
+
+Helper scripts from this session (may still exist): `.opencode/.tmp/task42/live_now.py` (live-namespace listing / `--bodies`), `.opencode/.tmp/r2prod/tail.py` (tail parser). Reuse them; do not rewrite the worker.
+
+**Baselines to compare against** (from this section, not to be re-censused):
+
+- Pre-fix live-namespace `.fetch`: **23,133/day** (964/h) in `tAlbcB9w6O0zY9sZK02ZT`.
+- Bucket-wide mean: **~35k objects/day** (lead census; do not repeat).
+- Immediate post-fix live namespace at 15:29Z: **32 `.fetch` / 460 objects**, ~44 `.fetch`/h, ~1,045/day extrapolated.
+- Per-URL blog/guides keys: **3 / 3 / 3 / 3**.
+- Burst origin blog/guides: **0 / 0**.
+- Freshness: 1,29 € / 32,90 € / 99,96 € matching 129 / 3290 / 9996 ¢.
+
+**A 24 h PASS looks like:**
+
+- Live namespace `incremental-cache/0tFvUE63ML6ljsBMGi8Ux/` `.fetch` count over the full 24 h is in the **low hundreds** (not the ~23k the pre-fix namespace wrote in the same span). Order-of-magnitude cut, not a single-digit count (ISR revalidations and the 900 s footer window will still write).
+- Per-URL blog/guides key counts are still **~2–3 each** (the `tags:["blog"]` / `["guides"]` / `[]` / `null` shapes). A count that grows with render volume is a FAIL.
+- Repeat-burst origin counts for `/api/v1/blog/posts` and `/api/v1/guides` are still **0** (or, if the 900 s window has just expired, **one** request per (path, locale), not one per render).
+- Freshness spot-check on ids 19, 1, 3550 still matches the live API.
+- `expire-30d` is still present.
+
+**Interaction with the 30-day lifecycle rule.** `expire-30d` expires objects 30 days after upload. The pre-fix duplicates (including the ~133k `.fetch` in `tAlbcB9w6O0zY9sZK02ZT/` and the other 30 historical namespaces) age out on their own. A raw total-object count of the bucket will **keep growing for weeks** before it declines. The 24 h metric to compare is the **LIVE namespace’s write rate and the per-URL key counts**, NOT the bucket-wide total. Do not purge, and do not re-run the full census to “check progress.”
+
+### What this proves and what it does not
+
+**Proves** (production, this deploy, 14:45–15:30Z):
+
+- The fetch-cache key for blog/guides reads is **stable** on production. The live namespace holds **2–3 keys per blog/guides URL** (different Next fetch-option shapes), not a key per render. A 20-render burst of `/` and `/en` produced **zero** new `.fetch` keys and **zero** origin requests for `/api/v1/blog/posts` and `/api/v1/guides`.
+- The `.fetch` write rate in the live namespace dropped by roughly **an order of magnitude** on production: ~44/h (~1,045/day extrapolated) vs the pre-fix **964/h (23,133/day)** in the then-live namespace, and vs the **~35k/day** bucket-wide mean. That is ~22× vs the pre-fix live-namespace rate and ~33× vs the 35k/day mean.
+- Content is fresh: `/tuotteet` server-rendered prices match the live API on the same three products the lead session checked.
+- `expire-30d` is in place. The `API_WORKER` binding path still carries `x-request-id` + `traceparent`. No object was deleted.
+
+**Does not prove:**
+
+- That the rate holds over **24 hours**. The window has not elapsed. ISR revalidations, a full day of crawler traffic, and tag revalidations could change the absolute count; the per-URL key counts are the invariant to watch.
+- A fall in the **bucket-wide total**. Historical pre-fix objects remain until the 30-day rule expires them. Comparing tomorrow’s whole-bucket object count to today’s is the wrong test.
+- Exactly one cache key per URL. Unifying the `tags` / no-tags fetch-option shapes was not in scope.
+- Tag-cache persistence. Dummy tag cache is still what is deployed; the revalidate endpoint was not invoked with its secret.
+- The ~35k/day census itself. It was taken once by the lead session and is treated as given. Re-running it would be another billable Class A sweep for no additional signal.
+
+### Operational notes
+
+- **No R2 object was deleted**, in any bucket, in any way. No bucket purge, no bulk deletion. Existing production cache objects age out under `expire-30d`.
+- **No full-bucket census was re-run.** Listings were confined to the live namespace `incremental-cache/0tFvUE63ML6ljsBMGi8Ux/` (three complete prefix listings + one `bodies=1` pass, ~32 Class B `GET`s on `.fetch` payloads) plus a one-object health peek. Not a census.
+- No source file was modified. Only this section was appended to `verification.md`.
+- Nothing was committed to git (lead session commits).
+- Nothing was deployed. Lifecycle rules were only listed, never written.
+- Cloudflare token was used inline via `$(cat /root/.cloudflare-token)` and was never printed, copied, or logged.
+- Measurement timestamps (UTC): live-namespace re-read 15:27:18Z; bodies pass 15:27Z; freshness ~15:27Z; lifecycle list ~15:27Z; burst 15:28:27–15:29:06Z (tail start 15:27:57Z); post-burst live-namespace 15:29:19Z.
+- The throwaway remote dev worker from the lead session (`.opencode/.tmp/r2prod/`, port 8796) was reused, not restarted. Scratch from this session lives only in `.opencode/.tmp/task42/`.
+
