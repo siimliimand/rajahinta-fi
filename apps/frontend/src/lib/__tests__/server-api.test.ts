@@ -11,8 +11,10 @@
  *      request id); the Next-only `next` fetch option never reaches the
  *      RequestInit handed to the Request constructor.
  *   2. Context missing or throwing — the call falls back to `request()`'s
- *      URL path against the real `NEXT_PUBLIC_API_URL` base and keeps
- *      `next: { revalidate: 900 }` on the fetch init.
+ *      URL path against the real `NEXT_PUBLIC_API_URL` base, keeps
+ *      `next: { revalidate: 900 }` on the fetch init, and therefore rides
+ *      Next's patched global fetch: no generated request id (a cacheable
+ *      read must keep a stable fetch-cache key), trace context intact.
  *   3. Envelope parity — a non-2xx binding answer throws the SAME
  *      {@link ApiFetchError} shape `request()` throws (status, parsed
  *      body, echoed `x-request-id`), and a 2xx parses to the same JSON.
@@ -183,7 +185,11 @@ describe('serverRequest — context missing → request() URL fallback', () => {
     });
     const headers = init.headers as Record<string, string>;
     expect(headers.traceparent).toMatch(TRACEPARENT_RE);
-    expect(headers['x-request-id']).toMatch(UUID_RE);
+    // The fallback keeps `next: { revalidate: 900 }`, so it rides Next's
+    // patched global fetch and IS cacheable — a generated request id would
+    // mint a distinct fetch-cache key per render (fix-r2-fetch-cache-key-
+    // explosion, D1). The API Worker assigns the UUID on an actual miss.
+    expect(headers['x-request-id']).toBeUndefined();
   });
 
   it('keeps `next: { revalidate: 900 }` on the fallback init', async () => {
