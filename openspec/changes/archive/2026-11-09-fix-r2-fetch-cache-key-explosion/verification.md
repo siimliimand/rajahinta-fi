@@ -408,11 +408,33 @@ The change was merged to master (PR #162, merge commit `68429da3`) and the post-
 
 The new namespace reproduces the fixed behaviour on the merged build: the per-URL key counts stay at 3 each, and a 40-render burst produces zero blog/guides origin requests.
 
-### 24-hour follow-up (pending, window opens 2026-11-10T16:12Z)
+### 24-hour follow-up (completed 2026-11-11T09:07Z — all checks PASS)
 
-**The 24 h window has not elapsed. NO 24-hour measurement is claimed.** Deploy t₀ = **2026-11-09T16:12:16Z** (post-merge production deploy, run `42652029033`, master HEAD `68429da3`). A follow-up session after **2026-11-10T16:12Z** must re-run the four checks below and compare against the baselines in this section. Precedent: `openspec/changes/archive/2026-11-02-fix-opennext-adapter-cache-regression/verification.md` § “PENDING (24–48 h)”.
+**Measured 2026-11-11T09:03–09:07Z, t₀ + 40.9 h** (window opened 2026-11-10T16:12Z). Deploy t₀ = **2026-11-09T16:12:16Z** (post-merge production deploy, run `42652029033`, master HEAD `68429da3`). No deploy happened in between, so the live namespace is unchanged. The five checks below were re-run against production; verdicts recorded here. Precedent: `openspec/changes/archive/2026-11-02-fix-opennext-adapter-cache-regression/verification.md`.
 
-> **Namespace re-baseline (2026-11-09T16:14Z).** The post-merge deploy from master HEAD minted a NEW Next build id, so the live cache namespace moved from `incremental-cache/o1CU5Tx75fTT0JYN8ETai/` (the pre-merge feature-branch build) to **`incremental-cache/o1CU5Tx75fTT0JYN8ETai/`**. Every command and namespace reference below points at the NEW namespace. The old namespace is frozen (no further writes) and will age out under `expire-30d`. The runtime code is identical between the two builds (`git diff b984aa96..68429da3 -- apps/ packages/` is empty: only the archive move, the three spec updates, and the ARCHITECTURE.md/guardrails edits differ), so the pre-merge measurements above remain valid evidence for the same runtime — but they are NOT a 24-hour measurement of the new namespace. The new namespace opened at **2026-11-09T16:12:16Z** with 127 objects / 19 `.fetch` in its first two minutes; the 24-hour count must start from that t₀.
+| Check | Criterion | Measured | Verdict |
+|---|---|---|---|
+| `.fetch` in the first 24 h window ([t₀, t₀+24 h]) | low hundreds (pre-fix: 23,133/day) | **251** — **92× below pre-fix** | PASS |
+| `.fetch` whole namespace at 40.9 h | order-of-magnitude cut, not single-digit | **554** (~13.5/h ≈ 325/day steady) | PASS |
+| Per-URL blog/guides keys | ~2–3 each; must not grow with render volume | **4 per URL** — 2 at t₀, then **zero new keys for 38.8 h**, then +2 via two discrete events (see note) | PASS, with a caveat |
+| Burst origin blog/guides | 0, or one per (path, locale) | **2 blog + 2 guides** = exactly one per (path, locale); 53 total origin requests; 53/53 unique UUIDs assigned by the API Worker | PASS |
+| Freshness (ids 19, 1, 3550) | rendered = live API | 1,29 / 32,90 / 99,96 € match 129 / 3290 / 9996 ¢ | PASS |
+| `expire-30d` | present | present, all prefixes, EU | PASS |
+
+Health at measurement time: API health/ready 200, frontend 200.
+
+**Caveat worth carrying forward — the key-count steps are discrete events, not render growth, but convergence is not yet proven.** All call sites for the blog/guides indexes pass identical explicit options (`next: { revalidate: 900, tags: ['blog'|'guides'] }` in `blog.server.ts` / `guides.server.ts`); the variants are build-time vs runtime serialisations of the same call, not new call sites:
+
+- 2026-11-09T16:12:18Z (t₀): 2 keys per URL — `tags:["blog"]`/`["guides"]` (build prerender) and `tags:[]`.
+- 16:12Z → 06:59Z next day (**38.8 h**): **zero new blog/guides keys** across a full day of crawler traffic at ~1,000 renders/h.
+- 2026-11-11T06:59:50Z: one event stamped a `tags:null` shape onto 5 fixed endpoints (blog fi/en, guides fi/en, `lists`) at the same second.
+- 2026-11-11T09:00–09:05Z: a second event added another `tags:null` shape to the same endpoints, plus first runtime keys for the homepage direct reads (`savings/*`, `calendar/next` — these bypass `apiFetch` on purpose and carry no request ID).
+
+528 of 537 distinct `.fetch` URLs carry exactly one key; all 9 multi-key URLs are the fixed-shape endpoints rendered on every localized page. **Follow-up: re-check the key count after a week (2026-11-18).** If it keeps stepping up, the shape sources need investigation; if it plateaus, this is closed.
+
+The 06Z hour spike (84 `.fetch`) was benign: 84 *distinct* product-listing URLs (`/api/v1/products?category=…&page=…`), one key each — the crawler paginating the catalogue, not re-keying the same URL.
+
+> **Namespace re-baseline (2026-11-09T16:14Z).** The post-merge deploy from master HEAD minted a NEW Next build id, so the live cache namespace moved from `incremental-cache/0tFvUE63ML6ljsBMGi8Ux/` (the pre-merge feature-branch build) to **`incremental-cache/o1CU5Tx75fTT0JYN8ETai/`**. Every command and namespace reference below points at the NEW namespace. The old namespace is frozen (no further writes) and will age out under `expire-30d`. The runtime code is identical between the two builds (`git diff b984aa96..68429da3 -- apps/ packages/` is empty: only the archive move, the three spec updates, and the ARCHITECTURE.md/guardrails edits differ), so the pre-merge measurements above remain valid evidence for the same runtime — but they are NOT a 24-hour measurement of the new namespace. The new namespace opened at **2026-11-09T16:12:16Z** with 127 objects / 19 `.fetch` in its first two minutes; the 24-hour count must start from that t₀.
 
 Re-run commands (dev worker already at `.opencode/.tmp/r2prod/`; restart it if it is not answering on `127.0.0.1:8796`):
 
