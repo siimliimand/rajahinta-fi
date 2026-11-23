@@ -277,7 +277,7 @@ export function recordFeedLastSuccessAge(
 // D1 measurements — the reads behind the cadence gauges.
 // ---------------------------------------------------------------------------
 
-/** The curated in-repo carriers — the datasets the refresh crons append (composeCuratedCarriers/composeCarrierRateSources parity). */
+/** The curated in-repo carriers — the datasets the curated cron appends (composeCuratedCarriers parity). */
 function expectedTransportCarriers(): string[] {
   return [
     new FransbergCarrierRateSource().carrierId,

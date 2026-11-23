@@ -7,8 +7,10 @@
  * 30-minute pattern carries the time-series aggregation, the freshness
  * alert (its VERIFIED→STALE ageing sweep is index-bounded and stays on
  * this tick), price-alert evaluation, savings snapshots, and outcome
- * margins; the 6-hourly pattern carries the transport-rate refresh, the
- * task-3.4 click-counter snapshot flush, the merchant-reliability
+ * margins; the 6-hourly pattern carries the transport freshness gauge
+ * (transport-rate-refresh.ts — the curated regime retired its append
+ * path, the tick reads the gauge inputs only), the task-3.4
+ * click-counter snapshot flush, the merchant-reliability
  * aggregates refresh, and the data-quality gauges — dispatched
  * independently with per-handler error isolation: one failing handler
  * must not starve the others on the same tick, and a throw inside one

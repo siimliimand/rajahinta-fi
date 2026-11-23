@@ -1,7 +1,7 @@
 /**
- * Tax dataset-review + transport-refresh cron handler tests (task
+ * Tax dataset-review + transport freshness cron handler tests (task
  * 4.3) — RateReviewSchedulerService semantics behind the snapshot-source
- * interface, and the transport refresh + freshness assessment.
+ * interface, and the transport freshness read + assessment.
  *
  * @module DatasetReviewCronTest
  */
@@ -136,30 +136,28 @@ describe('tax-dataset-review cron handler', () => {
 // ---------------------------------------------------------------------------
 
 describe('transport-rate-refresh cron handler', () => {
-  it('refreshes all carriers through the wildcard and assesses freshness', async () => {
+  it('reads the newest observed_at through the injected seam and assesses freshness', async () => {
     const { env } = createEnv();
-    const refresh = vi.fn().mockResolvedValue({
-      ratesUpdated: 3,
-      newestOfferObservedAt: new Date(Date.now() - 3_600_000),
+    const findNewestObservedAt = vi
+      .fn()
+      .mockResolvedValue(new Date(Date.now() - 3_600_000));
+
+    const result = await handleTransportRateRefresh(env, LOG, {
+      findNewestObservedAt,
     });
 
-    const result = await handleTransportRateRefresh(env, LOG, { refresh });
-
-    expect(refresh).toHaveBeenCalledWith('*');
-    expect(result.ratesUpdated).toBe(3);
+    expect(findNewestObservedAt).toHaveBeenCalledTimes(1);
+    expect(result.newestOfferObservedAt).not.toBeNull();
   });
 
-  it('composes the pipeline adapter by default (governance gate over the wildcard)', async () => {
+  it('reads the newest observed_at from D1 by default (the append path is retired — curated-rate-refresh.ts owns writes)', async () => {
     const { env } = createEnv();
-    // Default composition with the fail-closed in-memory governance store:
-    // no permitted carriers → nothing written, newest offer read from D1.
     const result = await handleTransportRateRefresh(env, LOG, {});
-    expect(result.ratesUpdated).toBe(0);
     expect(result.newestOfferObservedAt).toBeNull();
   });
 });
 
-describe('assessFreshness (7-day transport staleness invariant)', () => {
+describe('assessFreshness (curated review-cadence thresholds — 45/90 days)', () => {
   const error = vi.fn();
   const log: Logger = { ...LOG, error };
 
@@ -173,19 +171,29 @@ describe('assessFreshness (7-day transport staleness invariant)', () => {
     );
   });
 
-  it('alerts when the newest offer exceeds the 7-day threshold', () => {
+  it('warns past the 45-day review-cadence warning', () => {
     error.mockClear();
-    assessFreshness(log, new Date(Date.now() - 8 * 86_400_000));
+    assessFreshness(log, new Date(Date.now() - 46 * 86_400_000));
     expect(error).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.stringContaining('TRANSPORT_FRESHNESS_ALERT'),
+        message: expect.stringContaining('TRANSPORT_FRESHNESS_ALERT (warning)'),
       }),
     );
   });
 
-  it('stays silent inside the threshold', () => {
+  it('escalates to critical past the 90-day level', () => {
     error.mockClear();
-    assessFreshness(log, new Date(Date.now() - 86_400_000));
+    assessFreshness(log, new Date(Date.now() - 91 * 86_400_000));
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining('TRANSPORT_FRESHNESS_ALERT (critical)'),
+      }),
+    );
+  });
+
+  it('stays silent inside the 45-day warning', () => {
+    error.mockClear();
+    assessFreshness(log, new Date(Date.now() - 30 * 86_400_000));
     expect(error).not.toHaveBeenCalled();
   });
 
