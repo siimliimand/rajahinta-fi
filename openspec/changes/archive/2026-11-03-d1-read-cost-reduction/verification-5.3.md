@@ -215,3 +215,18 @@ over ~3 nights.
    worker code; the sweep has never deleted anything in production.
 2. `contact-retention` carries the same latent 500-variable DELETE pattern —
    masked only because it currently deletes 0 rows.
+
+## 48 h read observation — OUTCOME (recorded 2026-11-23)
+
+The protocol window (2026-11-02 → 11-04) was polluted by two co-factors: the
+neighboring calculation-record retention sweep (same 03:30 UTC slot) was
+failing on Workers (`process is not defined`, fixed by PR #161 on 2026-11-03),
+and the retail-offers backlog had not yet drained. Post-drain steady state
+(Nov 4–22): **avg 38.5M rowsRead/day** vs the 153–207M/day pre-change
+baseline — a sustained ~4–5× reduction; best days 16.6–26.4M. Candidate
+backlog 81,241 → 0 by 2026-11-22; retail_offers 331,640 → 242,201 rows. The
+"<15M/day" figure above was aspirational; sustained sub-15M would require
+addressing ingestion-path reads (daily merchant sync + hourly jobs), which are
+out of this change's scope. Per-night deletion counts are read from rowsWritten
+spike deltas — Workers Logs does not retain scheduled-invocation logs on this
+account. Billing budget-alert threshold review remains operator-side.
