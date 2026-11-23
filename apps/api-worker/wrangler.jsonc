@@ -203,13 +203,15 @@
   //                 gauges OFF this tick: the 30-minute full-window scan
   //                 was the 2026-10 billing period's largest single read
   //                 consumer, and 6-hourly cuts it ~12×.
-  //   0 */6 * * *   transport-rate refresh (EVERY_6_HOURS), the task-3.4
-  //                 click-counter snapshot flush (legacy '0 */6 * * *'),
-  //                 the merchant-reliability aggregates refresh, and the
-  //                 data-quality cadence gauges (task 2.3, design D2/D3)
-  //                 — four handlers on one pattern. The refresh registers
-  //                 before the gauges so the per-feed last-success gauge
-  //                 reads same-tick materialized rows; the materialized
+  //   0 */6 * * *   transport freshness gauge — the read-only tick
+  //                 (transport-rate-refresh.ts; the curated regime retired
+  //                 its append path), the task-3.4 click-counter snapshot
+  //                 flush (legacy '0 */6 * * *'), the merchant-reliability
+  //                 aggregates refresh, and the data-quality cadence
+  //                 gauges (task 2.3, design D2/D3) — four handlers on one
+  //                 pattern. The freshness tick registers before the
+  //                 gauges so the per-feed last-success gauge reads
+  //                 same-tick materialized rows; the materialized
   //                 reliability figures may lag up to one refresh interval
   //                 (six hours) behind the 30-minute ageing sweep — the
   //                 spec'd tolerance (display-only embed, never feeds
@@ -461,13 +463,13 @@
       // Cron override (2026-10-14, ops request): ALL staging cron triggers
       // stopped — the empty array REPLACES the top-level set, so no
       // scheduled handler fires in staging (aggregation, freshness alert,
-      // transport refresh, click flush, tax review, retention sweep,
+      // transport freshness gauge, click flush, tax review, retention sweep,
       // fransberg refresh, preference digest). Staging ingestion was
       // already manual-only (above); re-enable by restoring the
       // pre-stop array and running `wrangler triggers deploy --env staging`:
       //   */30 * * * *  aggregation, freshness alert, price alerts, savings
       //                 snapshots, outcome margins
-      //   0 */6 * * *   transport refresh, click flush, reliability
+      //   0 */6 * * *   transport freshness gauge, click flush, reliability
       //                 aggregates, data-quality gauges
       //   0 2 * * *     tax review
       //   30 3 * * *    retention sweeps (calc records, contacts, retail

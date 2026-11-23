@@ -1,26 +1,40 @@
 /**
- * Transport-rate refresh cron handler (task 4.3, design D6) — the BullMQ
+ * Transport freshness gauge cron handler — the BullMQ
  * `TransportRateRefreshWorker` port. Cadence: every 6 hours
  * (`@Cron(CronExpression.EVERY_6_HOURS)` parity).
  *
- * Runs the existing transport pipeline (PipelineTransportRateAdapter:
- * governance-gated carrier sources — Posti first — appending validated
- * rates through the transport-offer write port over D1), then assesses
- * the 7-day freshness invariant. The BullMQ worker fed the Prometheus
- * gauge and logged the alert; on Workers the gauge moves to Analytics
- * Engine (task 6.1) and the alert to the email Worker (task 6.3) — this
- * handler keeps the log-level alert until then.
+ * ## The refresh is retired — this tick reads, it no longer appends
+ *
+ * The handler used to run the transport pipeline every 6 hours
+ * (PipelineTransportRateAdapter, Posti first, governance-gated). The
+ * monitored carriers are curated in-repo datasets now, and
+ * curated-rate-refresh.ts owns the append path (monthly, with the
+ * unchanged skip and the durable D1SourceGovernanceRepository gate).
+ * This tick's own append path has been governance-fail-closed since
+ * the cutover: it composed the empty in-memory governance repository
+ * (the no-arg composeGovernanceService() default — the same mistake
+ * behind the 2026-10 Posti append gap, fixed for the curated cron
+ * only), so every run skipped its carrier and wrote nothing. Wiring
+ * the D1 store here instead would make things worse — the pipeline
+ * adapter has no unchanged-skip, so a permitted run would append
+ * duplicate curated rows every 6 hours into append-only history.
+ *
+ * The two live duties stay on this pattern:
+ *
+ * - The Analytics Engine freshness gauge (task 6.1, design D8) — the
+ *   newest observed_at read straight from D1, same metric contract
+ *   (null → +Inf sentinel), no-op without METRICS.
+ * - The log-level freshness assessment — thresholded to the curated
+ *   review cadence (TRANSPORT_AGE_THRESHOLDS, the freshness-alert
+ *   email's constants): the pre-curation "7-day" wording here
+ *   contradicted the 45/90-day paging that actually fires.
  *
  * @module TransportRateRefreshCron
  */
 
-import { DEFAULT_STALENESS_THRESHOLDS } from '@rajahinta/core-domain';
-import { PipelineTransportRateAdapter } from '../../../../packages/data-acquisition/src/adapters/pipeline-transport-rate.adapter';
-import { PostiCarrierRateSource } from '../../../../packages/data-acquisition/src/adapters/posti-rate.source';
-import type { ICarrierRateSource } from '../../../../packages/data-acquisition/src/interfaces/carrier-rate-source.port';
-import { composeGovernanceService } from '../queues/pipeline';
 import { D1TransportOfferWritePort } from '../adapters/d1-domain-ports';
-import { recordTransportAge } from '../observability/metrics';
+import { recordTransportAge, transportAgeSeconds } from '../observability/metrics';
+import { TRANSPORT_AGE_THRESHOLDS } from './freshness-alert';
 import type { Env } from '../env';
 import type { Logger } from '../logger';
 
@@ -29,66 +43,45 @@ export const TRANSPORT_REFRESH_CRON = '0 */6 * * *';
 
 /**
  * Metric-contract name the PrometheusRule alert expressions consumed
- * (infra/monitoring) — kept in the alert line so the log-based alert
- * stays greppable until task 6.3 moves it to the email Worker.
+ * (infra/k8s/base/prometheusrule.yaml) — kept in the alert line so the
+ * log-based alert stays greppable alongside the freshness-alert email
+ * (task 6.3).
  */
 const NEWEST_OFFER_AGE_METRIC = 'rajahinta_transport_newest_offer_age_seconds';
 
-/** All-governed-carriers wildcard — BullMQ job data parity (`carrierId: '*'`). */
-const ALL_CARRIERS = '*';
-
-/** Carrier sources keyed by carrierId — Posti first (task 7.4 parity). */
-export function composeCarrierRateSources(): Map<string, ICarrierRateSource> {
-  const posti = new PostiCarrierRateSource();
-  const map = new Map<string, ICarrierRateSource>();
-  map.set(posti.carrierId, posti);
-  return map;
-}
-
 /**
- * One 6-hourly refresh cycle + freshness assessment.
+ * One 6-hourly freshness tick: read the newest transport-offer
+ * observed_at from D1, assess the review-cadence invariant into the
+ * log, and feed the Analytics Engine gauge.
  *
- * `deps` is a test seam (refresh service override).
+ * `deps` is a test seam (newest-observation read override).
  */
 export async function handleTransportRateRefresh(
   env: Env,
   log: Logger,
   deps: {
-    refresh?: (carrierId: string) => Promise<{
-      ratesUpdated: number;
-      newestOfferObservedAt: Date | null;
-    }>;
+    findNewestObservedAt?: () => Promise<Date | null>;
   } = {},
-): Promise<{ ratesUpdated: number; newestOfferObservedAt: Date | null }> {
-  const refresh =
-    deps.refresh ??
-    ((carrierId: string) => {
-      const adapter = new PipelineTransportRateAdapter(
-        composeGovernanceService(),
-        composeCarrierRateSources(),
-        new D1TransportOfferWritePort(env.DB),
-      );
-      return adapter.refreshCarrierRates(carrierId);
-    });
+): Promise<{ newestOfferObservedAt: Date | null }> {
+  const findNewestObservedAt =
+    deps.findNewestObservedAt ??
+    (() => new D1TransportOfferWritePort(env.DB).findNewestObservedAt());
 
-  log.info({ message: 'Running 6-hourly transport-rate refresh' });
-  const result = await refresh(ALL_CARRIERS);
-  log.info({
-    message: `Refreshed ${result.ratesUpdated} transport rates for all carriers`,
-    ratesUpdated: result.ratesUpdated,
-  });
+  log.info({ message: 'Running 6-hourly transport freshness tick' });
+  const newestOfferObservedAt = await findNewestObservedAt();
 
-  assessFreshness(log, result.newestOfferObservedAt);
-  // Task 6.1 (design D8): the freshness gauge moves to Analytics Engine —
-  // same metric contract (null → +Inf sentinel), no-op without METRICS.
-  recordTransportAge(env, result.newestOfferObservedAt);
-  return result;
+  assessFreshness(log, newestOfferObservedAt);
+  recordTransportAge(env, newestOfferObservedAt);
+  return { newestOfferObservedAt };
 }
 
 /**
- * Feed the transport-offer age into the freshness alerting path
- * (background-jobs spec): log the gauge value and raise the alert when
- * the newest offer exceeds the 7-day transport staleness threshold.
+ * Log-level transport freshness assessment against the curated review
+ * cadence (TRANSPORT_AGE_THRESHOLDS — the same constants the
+ * freshness-alert email cron evaluates, so log and paging can never
+ * diverge): warning at 45 days, critical at 90 days. The user-facing
+ * reliability staleness contract is a separate, shorter window and
+ * already degrades the rows to STALE well before either level.
  */
 export function assessFreshness(
   log: Logger,
@@ -101,23 +94,32 @@ export function assessFreshness(
       message:
         `${NEWEST_OFFER_AGE_METRIC}=+Inf ` +
         'TRANSPORT_FRESHNESS_ALERT: no transport offers exist — ' +
-        'newest offer age exceeds the 7-day threshold by definition',
+        'newest offer age exceeds every threshold by definition',
     });
     return;
   }
 
-  const ageMs = Date.now() - newestOfferObservedAt.getTime();
-  const ageSeconds = Math.max(0, Math.floor(ageMs / 1000));
+  const ageSeconds = transportAgeSeconds(newestOfferObservedAt);
+  const { warning, critical } = TRANSPORT_AGE_THRESHOLDS;
+  const ageDays = (ageSeconds / 86_400).toFixed(1);
 
-  const thresholdMs = DEFAULT_STALENESS_THRESHOLDS.transport.milliseconds;
-  if (ageMs > thresholdMs) {
-    const ageDays = (ageSeconds / 86_400).toFixed(1);
+  if (ageSeconds > critical.thresholdSeconds) {
     log.error({
       message:
         `${NEWEST_OFFER_AGE_METRIC}=${ageSeconds} ` +
-        `TRANSPORT_FRESHNESS_ALERT: newest transport offer is ${ageDays} days old ` +
-        '(observed ' + newestOfferObservedAt.toISOString() + ') — exceeds the 7-day threshold; ' +
-        'transport costs on all calculations degrade to ESTIMATED/UNAVAILABLE',
+        `TRANSPORT_FRESHNESS_ALERT (critical): newest transport offer is ${ageDays} days old ` +
+        `(observed ${newestOfferObservedAt.toISOString()}) — exceeds the 90-day critical level; ` +
+        'the quarterly curated re-verification is a full season overdue',
+    });
+    return;
+  }
+  if (ageSeconds > warning.thresholdSeconds) {
+    log.error({
+      message:
+        `${NEWEST_OFFER_AGE_METRIC}=${ageSeconds} ` +
+        `TRANSPORT_FRESHNESS_ALERT (warning): newest transport offer is ${ageDays} days old ` +
+        `(observed ${newestOfferObservedAt.toISOString()}) — exceeds the 45-day warning level; ` +
+        'schedule the curated re-verification (curated-rate-refresh.ts)',
     });
   }
 }

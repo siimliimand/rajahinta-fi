@@ -288,10 +288,18 @@ export function buildAlertEmail(
     violation.invariant === STALE_PRICE_SHARE_GAUGE
       ? 'stale price share — audited price offers whose reliability is STALE'
       : 'transport offer age — age of the NEWEST transport offer';
+  // The transport action points at the curated review procedure, not a
+  // live-feed breakage: the carriers are in-repo datasets since the
+  // curation, so "check the carrier source" would send the operator
+  // looking for a feed that no longer exists.
   const action =
     violation.invariant === STALE_PRICE_SHARE_GAUGE
       ? 'Check the price-ingestion queue and merchant feed health.'
-      : 'Check the transport-rate-refresh cron and the carrier source.';
+      : 'Transport rates are curated in-repo datasets — re-verify them ' +
+        "against the carriers' published rates, bump each dataset's " +
+        'OBSERVED_AT constant, and deploy: the next monthly curated tick ' +
+        'appends (curated-rate-refresh.ts; out-of-band trigger: ' +
+        'docs/ingestion-runbook.md §7.4).';
 
   const subject = `[${violation.severity.toUpperCase()}] rajahinta freshness: ${violation.invariant} breached`;
   const text = [
